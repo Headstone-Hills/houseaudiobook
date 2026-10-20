@@ -391,3 +391,14 @@ def test_real_pdf_without_labels_uses_offset() -> None:
 def test_real_pdf_rejects_garbage() -> None:
     with pytest.raises(PdfError):
         extract_pdf(b"%PDF-1.4 garbage")
+
+
+def test_pdf_title_page_survives_matching_running_head() -> None:
+    """Regression: a title page whose text equals the running head was stripped."""
+    head = "              THE BOOK"
+    body = ["It was dark.", "The fox ran.", "A vine grew.", "Then it ended."]
+    pages = ["  The Book  "] + [f"{head}\n    {b}\n      {n}" for n, b in enumerate(body, 1)]
+    doc = extract_pdf_pages(pages)
+    assert doc.text.startswith("The Book")  # the title page is kept...
+    assert "THE BOOK" not in doc.text  # ...while the running heads go
+    assert doc.text.count("The Book") == 1

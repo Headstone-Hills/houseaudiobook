@@ -56,35 +56,35 @@ def _furniture_key(line: str) -> str:
 
 
 def _strip_furniture(pages: list[list[str]]) -> list[list[str]]:
-    """Drop running heads/feet and page numbers from the top and bottom of pages."""
+    """Drop running heads/feet and page numbers from the top and bottom of pages.
 
-    def edges(lines: list[str]) -> list[str]:
-        body = [ln for ln in lines if ln.strip()]
-        return body[:2] + body[-2:]
+    Heads and feet are counted separately, and a repeated line is only furniture
+    on a page that has other text: a page holding nothing but the book's title is
+    a title page, even when the running head repeats that title.
+    """
 
-    counts = Counter(_furniture_key(ln) for lines in pages for ln in set(edges(lines)))
+    def body(lines: list[str]) -> list[str]:
+        return [ln for ln in lines if ln.strip()]
+
+    heads = Counter(_furniture_key(ln) for ls in pages for ln in set(body(ls)[:2]))
+    feet = Counter(_furniture_key(ln) for ls in pages for ln in set(body(ls)[-2:]))
     need = max(3, FURNITURE_SHARE * len(pages))
-    repeated = {k for k, n in counts.items() if n >= need}
 
     out = []
     for lines in pages:
         lines = list(lines)
-        for from_top in (True, False):
+        for repeated in (heads, feet):
+            from_top = repeated is heads
             for _ in range(2):
-                idx = next(
-                    (
-                        i
-                        for i, ln in (
-                            enumerate(lines) if from_top else reversed(list(enumerate(lines)))
-                        )
-                        if ln.strip()
-                    ),
-                    None,
-                )
+                order = range(len(lines)) if from_top else range(len(lines) - 1, -1, -1)
+                idx = next((i for i in order if lines[i].strip()), None)
                 if idx is None:
                     break
                 ln = lines[idx]
-                if _PAGE_NUMBER.match(ln) or _furniture_key(ln) in repeated:
+                only_line = len(body(lines)) == 1
+                if _PAGE_NUMBER.match(ln) or (
+                    repeated[_furniture_key(ln)] >= need and not only_line
+                ):
                     lines[idx] = ""
                 else:
                     break

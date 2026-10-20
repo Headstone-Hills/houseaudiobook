@@ -3,6 +3,8 @@
 
 Output (default: engine/fixtures/):
   manuscript.txt       the source text, with `[p. N]` page markers
+  manuscript.docx      the same text: a title page, then explicit page breaks
+  manuscript.pdf       the same text: a title page labelled "i", then pages 1-3
   ch01_take1.wav ...   synthetic narration, 16 kHz mono 16-bit
   ground_truth.json    every read sentence and injected defect, with timestamps
 
@@ -506,6 +508,112 @@ def say_synth(sr: int) -> Synth:
     return synth
 
 
+# --------------------------------------------------------------------------
+# Manuscript in other formats (same text and pages as MANUSCRIPT_TEXT)
+# --------------------------------------------------------------------------
+
+TITLE_PAGE = "Two Fables from Aesop"  # front matter: printed page 1 is physical page 2
+
+
+def manuscript_pages(text: str = MANUSCRIPT_TEXT) -> list[list[str]]:
+    """Paragraphs grouped by the `[p. N]` page they start on."""
+    pages: list[list[str]] = []
+    for block in re.split(r"\n\s*\n", text):
+        lines = [ln.strip() for ln in block.strip().splitlines() if ln.strip()]
+        for ln in list(lines):
+            if PAGE_MARKER.match(ln):
+                pages.append([])
+                lines.remove(ln)
+        if lines:
+            pages[-1].append(" ".join(lines))
+    return pages
+
+
+def write_docx(path: Path, pages: list[list[str]]) -> None:
+    """A minimal .docx: title page, then one explicit page break per page."""
+    import zipfile
+    from xml.sax.saxutils import escape
+
+    def para(text: str, style: str | None = None, page_break_before: bool = False) -> str:
+        ppr = (f'<w:pStyle w:val="{style}"/>' if style else "") + (
+            "<w:pageBreakBefore/>" if page_break_before else ""
+        )
+        props = f"<w:pPr>{ppr}</w:pPr>" if ppr else ""
+        return f'<w:p>{props}<w:r><w:t xml:space="preserve">{escape(text)}</w:t></w:r></w:p>'
+
+    body = [para(TITLE_PAGE, "Title")]
+    for paras in pages:
+        for j, text in enumerate(paras):
+            style = "Heading1" if text.startswith("Chapter ") else None
+            body.append(para(text, style, page_break_before=j == 0))
+    ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    files = {
+        "[Content_Types].xml": (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/'
+            'vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/word/document.xml" ContentType="application/'
+            'vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'
+        ),
+        "_rels/.rels": (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/'
+            '2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'
+        ),
+        "word/document.xml": (
+            f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            f'<w:document xmlns:w="{ns}"><w:body>{"".join(body)}</w:body></w:document>'
+        ),
+    }
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in files.items():
+            # Fixed timestamps so the file is byte-identical on every run.
+            z.writestr(zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0)), data)
+
+
+def write_pdf(path: Path, pages: list[list[str]]) -> None:
+    """A book-like PDF: running head, indented hard-wrapped paragraphs, page numbers,
+    a roman-numbered title page, then pages labelled 1..N."""
+    import textwrap
+
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.constants import PageLabelStyle
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    tmp = path.with_suffix(".tmp.pdf")
+    c = canvas.Canvas(str(tmp), pagesize=letter, invariant=1)  # invariant: reproducible
+    c.setFont("Times-Bold", 18)
+    c.drawCentredString(306, 500, TITLE_PAGE)
+    c.showPage()
+    for n, paras in enumerate(pages, start=1):
+        c.setFont("Times-Italic", 9)
+        c.drawCentredString(306, 750, "TWO FABLES FROM AESOP")
+        y = 700.0
+        for text in paras:
+            if text.startswith("Chapter "):
+                c.setFont("Times-Bold", 14)
+                c.drawString(72, y, text)
+                y -= 32
+                continue
+            c.setFont("Times-Roman", 12)
+            for k, line in enumerate(textwrap.wrap(text, 64)):
+                c.drawString(72 + (18 if k == 0 else 0), y, line)
+                y -= 16
+        c.setFont("Times-Roman", 9)
+        c.drawCentredString(306, 40, str(n))
+        c.showPage()
+    c.save()
+    w = PdfWriter(clone_from=PdfReader(str(tmp)))
+    w.set_page_label(0, 0, style=PageLabelStyle.LOWERCASE_ROMAN, start=1)
+    w.set_page_label(1, len(pages), style=PageLabelStyle.DECIMAL, start=1)
+    w.write(str(path))
+    tmp.unlink()
+
+
 def write_wav(path: Path, audio: Audio, sr: int) -> None:
     import soundfile as sf  # local import: pure parts must not need it
 
@@ -529,6 +637,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "manuscript.txt").write_text(MANUSCRIPT_TEXT, encoding="utf-8")
+    pages = manuscript_pages()
+    write_docx(args.out / "manuscript.docx", pages)
+    write_pdf(args.out / "manuscript.pdf", pages)
     for p, a in zip(plans, assembled, strict=True):
         write_wav(args.out / p.name, a.audio, SAMPLE_RATE)
     (args.out / "ground_truth.json").write_text(
