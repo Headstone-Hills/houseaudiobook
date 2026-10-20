@@ -4,13 +4,15 @@ Every dependency and model is checked before bundling (SPEC §12). Versions are
 what is installed or evaluated as of the date shown. "Dev only" means it is never
 shipped in the app.
 
-## In use (updated M1, 2026-10-20)
+## In use (updated M2, 2026-10-20)
 
 | Package | Version | License | Shipped? |
 |---|---|---|---|
 | fastapi | 0.156.0 | MIT | yes |
 | uvicorn | 0.54.0 | BSD-3-Clause | yes |
 | websockets | 17.3 | BSD-3-Clause | yes (WebSocket support for uvicorn) |
+| pypdf | 6.21.1 | BSD-3-Clause | yes (PDF manuscripts) |
+| reportlab | 5.0.1 | BSD | dev only (generates PDF fixtures) |
 | numpy | 2.4.x | BSD-3-Clause (plus 0BSD, MIT, Zlib, CC0 parts) | yes |
 | soundfile | 0.14.0 | BSD-3-Clause; bundles libsndfile (LGPL-2.1) | yes |
 | react, react-dom | 19.3.1 | MIT | yes (in the web build) |
@@ -33,6 +35,8 @@ shipped in the app.
 | mlx-whisper | 0.4.3 | MIT | optional Apple Silicon backend |
 | Whisper model weights (OpenAI) | n/a | MIT | to confirm on each model card before first-run download (M9) |
 | rapidfuzz | 3.14.6 | MIT | manuscript alignment (M3) |
+| python-docx | 1.2.0 | MIT | not adopted: .docx is read with the standard library (D-022) |
+| PyMuPDF | 2.0 | AGPL-3.0 or commercial | **not adopted** (D-022) |
 | stable-ts | 2.19.1 | MIT | not adopted: archived |
 | whisperx | 3.8.6 | BSD-2-Clause | deferred |
 | CrisperWhisper weights | n/a | Nyra Health Non-Commercial Research License | **not usable commercially** without a separate license |

@@ -159,3 +159,88 @@ one `ok`, `missing` or `modified`. Nothing is changed automatically. Relink
 accepts only a file with the recorded hash. For a copied source, a damaged
 copy is renamed `*.damaged-<timestamp>` and kept, never deleted, before the
 good file is copied back in.
+
+## D-022 · Manuscript formats and libraries (M2)
+- **PDF: pypdf** (BSD-3-Clause, pure Python). Its layout mode keeps the
+  indentation and blank lines that paragraph detection needs, and it reads PDF
+  page labels (printed numbers like "iii", "1"). It takes about 4 ms a page
+  (measured: 1.1 s for a 300-page book), so preview is a plain request.
+  PyMuPDF was rejected: AGPL-3.0.
+- **.docx: the standard library** (`zipfile` + `xml.etree`) rather than
+  python-docx, avoiding an lxml dependency. Python's expat (2.4+) guards against
+  entity-expansion attacks.
+- **.txt/.md**: UTF-8 (with or without BOM), falling back to Windows-1252 with a
+  warning.
+- **EPUB, .doc, RTF, ODT**: refused with a message saying what to export to.
+  EPUB is in SPEC §6.2 but not in M2's acceptance criteria; it's deferred.
+- reportlab (BSD) is a dev-only dependency, used to generate PDF fixtures.
+
+## D-023 · One manuscript per project; re-mapping replaces units (M2)
+- A project holds one manuscript. Importing another replaces it in the
+  database; the previous copy stays in `text/`, never deleted.
+- The original is copied into `text/` (hash-verified, read-only), and every
+  later re-mapping reads that copy. Opening a project verifies the copy's hash
+  along with the audio sources.
+- Re-mapping (new page settings) replaces all `manuscript_unit` rows. Later
+  milestones must not key anything durable on unit ids. M4's stable issue keys
+  will use text and position instead.
+
+## D-024 · Page model (M2)
+- Extractors produce one model: plain text plus *page marks* (char offsets
+  where a page begins). Numbering and units are computed from that, so every
+  format behaves the same. A mark is recorded at the next text written, so
+  blank pages count toward physical numbering without creating empty pages.
+- Each unit stores its start page and end page (a sentence can turn a page),
+  the printed number (NULL when not numeric, e.g. "iii"), a display label, and
+  estimated and front-matter flags.
+- Modes, preferred in this order by "auto": text markers (`[p. 12]`, regex
+  configurable), explicit breaks (form feeds; .docx page, `pageBreakBefore`
+  and new-page section breaks), PDF pages (with labels if present), else a
+  words-per-page estimate. Estimates default to 250 words a page, a typical
+  trade paperback, and are labelled "approx. N" (SPEC §6.2).
+- Text before the first marker belongs to the page before it, or is front
+  matter if that marker is "[p. 1]".
+- "Printed page 1 is physical page N" sets the offset; earlier pages are front
+  matter. For a PDF with labels, front matter is whatever comes before the
+  first numeric label.
+- Skipping front matter works per sentence, not per paragraph, because a
+  paragraph can run from the last front-matter page onto page 1.
+- Word's last-rendered page breaks (`lastRenderedPageBreak`) are ignored. They
+  reflect one machine's layout at save time, so a .docx without explicit
+  breaks uses the estimate.
+
+## D-025 · PDF text heuristics (M2)
+- **Running heads and feet** are lines repeating at the top (or bottom) of at
+  least 30% of pages (and 3+ pages), compared with digits masked. Bare page
+  numbers are always dropped. A line that is the only text on its page is
+  never furniture, so a title page survives even when the running head repeats
+  the title.
+- **New paragraph** at a blank line, an indent of more than 2 columns beyond the
+  page's margin (the margin most pages share, for pages under 3 lines), a
+  chapter heading, or after a short line (under 80% of the median) that ends a
+  sentence.
+- **Hyphenation**: "jump-" at a line end followed by a lowercase letter is
+  rejoined ("jumping"). Known cost: a compound split exactly at its hyphen
+  ("well-" / "known") becomes "wellknown". That is rare, and M3's text
+  normalization must treat hyphens as optional when comparing (SPEC §6.3
+  lists hyphenation), which makes it harmless.
+- A paragraph continues across a page turn, with the page mark inside it.
+
+## D-026 · Sentences and chapters (M2)
+- **Sentence boundaries**: terminal punctuation, optional closing quotes or
+  brackets, whitespace, then an uppercase letter, digit or opening quote. This
+  keeps `"Stop!" she cried.` and `wait... then` together. A period after a
+  listed abbreviation (Mr, Dr, St, etc.) or a single initial is not a boundary.
+- **Headings** are never split ("Chapter One. The Fox and the Grapes." is one
+  utterance). A paragraph is a chapter heading if it's styled as one (.docx
+  style, including localized names via styles.xml or an outline level; a
+  Markdown `#`), or if it reads like one: "Chapter 3", "CHAPTER XII",
+  "Part Two", "Prologue". "Part of the plan" is not one.
+
+## D-027 · The UI shows the engine's open project on load (M2)
+Regression found by e2e: an update about already-finished jobs made the UI
+fetch the engine's open project and switch to it, even mid-typing on the
+Projects screen. Now the UI asks once on load (`GET /api/project`, which
+returns `null` when none is open, so it isn't an error) and continues in that
+project, which makes a page reload safe. Job updates only refresh a project
+that's already on screen.
