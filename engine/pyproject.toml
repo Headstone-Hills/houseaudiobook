@@ -17,6 +17,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Local speech recognition (D-007). Model weights download on first use to
+# $HILLAUDIO_HOME/models and are never committed.
+asr = [
+    "faster-whisper>=1.2",
+]
 dev = [
     "pytest>=8",
     "httpx2",  # Starlette's TestClient transport (replaces httpx)
@@ -43,5 +48,5 @@ mypy_path = "../scripts"
 files = ["hillaudio", "tests", "../scripts"]
 
 [[tool.mypy.overrides]]
-module = ["soundfile", "reportlab.*"]
+module = ["soundfile", "reportlab.*", "faster_whisper", "faster_whisper.*"]
 ignore_missing_imports = true

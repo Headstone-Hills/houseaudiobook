@@ -1,6 +1,6 @@
 # Spike 01: Transcription backend (faster-whisper vs mlx-whisper)
 
-- **Date:** 2026-10-20 · **Time box:** 1 hour · **Status:** decided provisionally; benchmark deferred to M3
+- **Date:** 2026-10-20 · **Time box:** 1 hour · **Status:** decided; benchmarked in M3 (see Results below)
 - **Question:** which local Whisper variant should be the default for word-level transcripts?
 
 ## What could and could not be tested here
@@ -80,3 +80,21 @@ problem. Real narration is needed before this decision is final.
 5. Sridhar et al., Interspeech 2025: https://www.isca-archive.org/interspeech_2025/sridhar25_interspeech.pdf
 6. Cortico, "Evaluating OpenAI's Whisper on Community Conversations": https://cortico.ai/news/insights/evaluating-openai-s-whisper-on-community-conversations/
 7. CrisperWhisper repository (license section): https://github.com/nyrahealth/CrisperWhisper
+
+## Results (M3, 2026-10-20)
+
+Once huggingface.co and *.hf.co were allowed, `scripts/bench_asr.py` ran
+tiny.en, small.en, medium.en and large-v3-turbo on the fixtures. The full table is in
+`docs/bench/asr-2026-10-20.md`.
+
+- **The "cleanup" risk is real, and a prompt mitigates it.** No model kept the injected
+  stutters unprompted. With `initial_prompt="Um, uh, the- the, I mean, sorry, let me
+  start again."` small, medium and turbo kept all of them. False starts, commentary,
+  misreads and skips survived in every configuration.
+- **small.en + prompt** had 0.0% verbatim WER at 0.19x real time. That is the best on
+  this CPU: larger models were no more accurate and cost 1.5-2.5x more.
+- **Timestamps** need snapping (D-008): raw p95 error was 500 ms; snapped, 10-12 ms.
+
+**Decision (D-028):** small.en with the disfluency prompt is the default; medium.en
+is an option for users who want it. This is to be re-checked on a real recording,
+because espeak-ng is not a human voice.

@@ -16,7 +16,7 @@ setup: $(VENV)/.installed web/node_modules/.installed
 $(VENV)/.installed: engine/pyproject.toml
 	$(PYTHON) -m venv $(VENV)
 	$(PY) -m pip install -q --upgrade pip
-	$(PY) -m pip install -q -e "engine[dev]"
+	$(PY) -m pip install -q -e "engine[dev,asr]"
 	@touch $@
 
 web/node_modules/.installed: web/package.json web/package-lock.json

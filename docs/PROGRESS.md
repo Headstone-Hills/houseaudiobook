@@ -86,7 +86,22 @@ Risks:
 - Re-mapping replaces unit ids (D-023); M4's stable keys must not depend on them.
 - .docx without explicit breaks falls back to an estimate, even if the author sees real pages in Word (D-024).
 
-## M3 · Transcribe + Compare to Text: not started
+## M3 · Transcribe + Compare to Text: in progress
+
+Plan:
+1. **Spike exit (01-asr).** `text/normalize.py` (case, punctuation, numbers, contractions, hyphens); `scripts/bench_asr.py` benchmarks `small.en`, `medium.en`, `large-v3-turbo` on the fixtures: WER against the heard text, disfluency survival, boundary error, real-time factor. Decide D-007.
+2. **`engine/hillaudio/asr/`.** A `Transcriber` interface; a faster-whisper backend (optional `asr` extra, models in `$HILLAUDIO_HOME/models`, never in the repo); transcripts cached by file hash + settings; cancellable jobs on a serial `asr` lane.
+3. **`analysis/align.py`** (pure). Normalized-token anchors, chaining with jump penalties (restarts and retakes), then dynamic-programming word alignment per run. Each sentence gets *readings* with a match score and classified differences: missing, extra, substitution, transposition, reordered, mispronunciation suspected. Transcript words outside every run are unaligned (commentary).
+4. **Store and API.** Schema v3: `analysis_run`, `transcript_word`, `alignment`. Endpoints to run Transcribe / Compare to Text and read results. A minimal comparison view in the UI; the full Issues panel is M4.
+5. **Tests.**
+   - A fake transcriber built from ground truth (perfect ASR), so alignment can be tested exactly.
+   - The same with seeded ASR noise, measuring precision/recall against targets.
+   - Normalization unit tests.
+   - The real-model benchmark is recorded in `docs/bench/`.
+- **Risks.**
+  - Whisper drops disfluencies (seen with tiny.en: a stutter vanished), so cleanup (M5) can't rely on the transcript alone.
+  - Robotic TTS fixtures understate real-narration accuracy.
+  - Alignment cost on 10-hour books, so the work is kept per file and banded.
 
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.

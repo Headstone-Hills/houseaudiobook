@@ -244,3 +244,22 @@ Projects screen. Now the UI asks once on load (`GET /api/project`, which
 returns `null` when none is open, so it isn't an error) and continues in that
 project, which makes a page reload safe. Job updates only refresh a project
 that's already on screen.
+
+## D-028 · ASR model and settings, measured (M3)
+`docs/bench/asr-2026-10-20.md` closes spike 01 and confirms D-007/D-008:
+- **Backend: faster-whisper, `small.en`, int8 on CPU, beam 5, word timestamps,
+  language en**, with a **disfluency `initial_prompt`** ("Um, uh, the- the, I mean,
+  sorry, let me start again."). Without the prompt, every model tested dropped every
+  injected stutter; with it, small/medium/turbo kept them. small.en + prompt had 0.0%
+  verbatim WER at 0.19x real time.
+- Words whose text normalizes to nothing (Whisper emits "-" after a stutter) are kept
+  in the stored transcript but ignored for timing and alignment.
+- Boundaries are snapped with analysis/boundaries.py, using hysteresis thresholds and
+  neighbour bounds. Two failure modes found by the benchmark, each with a regression
+  test: quiet word endings clipped, and a start snapped into the previous (stutter)
+  word. Snapped p95: 10 ms (start), 12 ms (end).
+- Model weights download on first use into `$HILLAUDIO_HOME/models`. This is the only
+  network use, it carries no user audio or text, and it needs huggingface.co and
+  *.hf.co allowed in the environment.
+- Caveat: synthetic voice and a small sample. Re-check on a real narration recording
+  before M8.
