@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+engine/.venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Web
+web/node_modules/
+web/dist/
+
+# Never commit user material or model weights (CLAUDE.md). Projects live in
+# *.hillproj folders; models are downloaded on first run.
+*.hillproj/
+models/
+*.bin
+*.safetensors
+*.pt
+*.ckpt
+*.onnx
+*.gguf
+
+# Audio is ignored everywhere except the small, generated fixtures.
+*.wav
+*.mp3
+*.aiff
+*.flac
+!engine/fixtures/*.wav
+
+# Rust / Tauri (M9)
+shell/target/
+
+.DS_Store

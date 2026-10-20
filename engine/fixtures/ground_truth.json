@@ -1,0 +1,444 @@
+{
+  "version": 1,
+  "tts": "espeak-ng",
+  "notes": "Times are float seconds from file start; *_sample fields are exact. Removal-type events (stutter, false_start, commentary) span the region a perfect cleanup would cut. Noise is white, RMS re full scale 1.0.",
+  "manuscript": "manuscript.txt",
+  "sentences": [
+    {
+      "id": "s00",
+      "text": "Chapter One. The Fox and the Grapes.",
+      "page": 1,
+      "chapter": 1,
+      "paragraph": 0,
+      "is_heading": true
+    },
+    {
+      "id": "s01",
+      "text": "A hungry fox saw some fine bunches of grapes hanging from a vine.",
+      "page": 1,
+      "chapter": 1,
+      "paragraph": 1,
+      "is_heading": false
+    },
+    {
+      "id": "s02",
+      "text": "The vine was trained along a high trellis.",
+      "page": 1,
+      "chapter": 1,
+      "paragraph": 1,
+      "is_heading": false
+    },
+    {
+      "id": "s03",
+      "text": "He did his best to reach them by jumping as high as he could.",
+      "page": 1,
+      "chapter": 1,
+      "paragraph": 1,
+      "is_heading": false
+    },
+    {
+      "id": "s04",
+      "text": "But it was all in vain, for they were just out of reach.",
+      "page": 2,
+      "chapter": 1,
+      "paragraph": 2,
+      "is_heading": false
+    },
+    {
+      "id": "s05",
+      "text": "So he gave up trying, and walked away with an air of dignity.",
+      "page": 2,
+      "chapter": 1,
+      "paragraph": 2,
+      "is_heading": false
+    },
+    {
+      "id": "s06",
+      "text": "I thought those grapes were ripe, he said, but I see now they are quite sour.",
+      "page": 2,
+      "chapter": 1,
+      "paragraph": 2,
+      "is_heading": false
+    },
+    {
+      "id": "s07",
+      "text": "Chapter Two. The Tortoise and the Hare.",
+      "page": 3,
+      "chapter": 2,
+      "paragraph": 3,
+      "is_heading": true
+    },
+    {
+      "id": "s08",
+      "text": "A hare once made fun of a tortoise for being so slow.",
+      "page": 3,
+      "chapter": 2,
+      "paragraph": 4,
+      "is_heading": false
+    },
+    {
+      "id": "s09",
+      "text": "The tortoise laughed and said that he would win a race against him.",
+      "page": 3,
+      "chapter": 2,
+      "paragraph": 4,
+      "is_heading": false
+    },
+    {
+      "id": "s10",
+      "text": "The hare soon ran far ahead, and lay down to take a nap.",
+      "page": 3,
+      "chapter": 2,
+      "paragraph": 5,
+      "is_heading": false
+    },
+    {
+      "id": "s11",
+      "text": "The tortoise plodded on and never stopped.",
+      "page": 3,
+      "chapter": 2,
+      "paragraph": 5,
+      "is_heading": false
+    },
+    {
+      "id": "s12",
+      "text": "When the hare woke up, the tortoise was already at the finish line.",
+      "page": 3,
+      "chapter": 2,
+      "paragraph": 5,
+      "is_heading": false
+    }
+  ],
+  "files": [
+    {
+      "name": "ch01_take1.wav",
+      "sample_rate": 16000,
+      "channels": 1,
+      "duration": 34.169625,
+      "num_samples": 546714,
+      "noise_dbfs_rms": -65.0,
+      "events": [
+        {
+          "type": "read",
+          "start": 0.5,
+          "end": 3.0261875,
+          "start_sample": 8000,
+          "end_sample": 48419,
+          "sentence_id": "s00",
+          "page": 1,
+          "expected": "Chapter One. The Fox and the Grapes.",
+          "heard": "Chapter One. The Fox and the Grapes."
+        },
+        {
+          "type": "read",
+          "start": 3.9261875,
+          "end": 7.7395625,
+          "start_sample": 62819,
+          "end_sample": 123833,
+          "sentence_id": "s01",
+          "page": 1,
+          "expected": "A hungry fox saw some fine bunches of grapes hanging from a vine.",
+          "heard": "A hungry fox saw some fine bunches of grapes hanging from a vine."
+        },
+        {
+          "type": "stutter",
+          "start": 8.1895625,
+          "end": 8.618625,
+          "start_sample": 131033,
+          "end_sample": 137898,
+          "sentence_id": "s02",
+          "page": 1,
+          "expected": null,
+          "heard": "The",
+          "detail": {
+            "word": "The"
+          }
+        },
+        {
+          "type": "read",
+          "start": 8.618625,
+          "end": 10.7871875,
+          "start_sample": 137898,
+          "end_sample": 172595,
+          "sentence_id": "s02",
+          "page": 1,
+          "expected": "The vine was trained along a high trellis.",
+          "heard": "The vine was trained along a high trellis."
+        },
+        {
+          "type": "false_start",
+          "start": 11.2371875,
+          "end": 12.863125,
+          "start_sample": 179795,
+          "end_sample": 205810,
+          "sentence_id": "s03",
+          "page": 1,
+          "expected": null,
+          "heard": "He did his best"
+        },
+        {
+          "type": "read",
+          "start": 12.863125,
+          "end": 16.0593125,
+          "start_sample": 205810,
+          "end_sample": 256949,
+          "sentence_id": "s03",
+          "page": 1,
+          "expected": "He did his best to reach them by jumping as high as he could.",
+          "heard": "He did his best to reach them by jumping as high as he could."
+        },
+        {
+          "type": "long_silence",
+          "start": 16.0593125,
+          "end": 19.5593125,
+          "start_sample": 256949,
+          "end_sample": 312949,
+          "sentence_id": null,
+          "page": 1,
+          "expected": null,
+          "heard": null,
+          "detail": {
+            "seconds": 3.5,
+            "after": "s03"
+          }
+        },
+        {
+          "type": "misread",
+          "start": 19.5593125,
+          "end": 22.512625,
+          "start_sample": 312949,
+          "end_sample": 360202,
+          "sentence_id": "s04",
+          "page": 2,
+          "expected": "But it was all in vain, for they were just out of reach.",
+          "heard": "But it was all in vain, for they were just out of sight.",
+          "detail": {
+            "expected_word": "reach",
+            "heard_word": "sight"
+          }
+        },
+        {
+          "type": "commentary",
+          "start": 22.962625,
+          "end": 25.782375,
+          "start_sample": 367402,
+          "end_sample": 412518,
+          "sentence_id": null,
+          "page": 2,
+          "expected": null,
+          "heard": "Hold on, let me get some water."
+        },
+        {
+          "type": "read",
+          "start": 25.782375,
+          "end": 29.2226875,
+          "start_sample": 412518,
+          "end_sample": 467563,
+          "sentence_id": "s05",
+          "page": 2,
+          "expected": "So he gave up trying, and walked away with an air of dignity.",
+          "heard": "So he gave up trying, and walked away with an air of dignity."
+        },
+        {
+          "type": "skip",
+          "start": 29.6726875,
+          "end": 33.669625,
+          "start_sample": 474763,
+          "end_sample": 538714,
+          "sentence_id": "s06",
+          "page": 2,
+          "expected": "I thought those grapes were ripe, he said, but I see now they are quite sour.",
+          "heard": "I thought those grapes were ripe, he said, but I see they are quite sour.",
+          "detail": {
+            "missing_word": "now"
+          }
+        }
+      ]
+    },
+    {
+      "name": "ch01_take2.wav",
+      "sample_rate": 16000,
+      "channels": 1,
+      "duration": 3.9024375,
+      "num_samples": 62439,
+      "noise_dbfs_rms": -50.0,
+      "events": [
+        {
+          "type": "read",
+          "start": 0.5,
+          "end": 3.4024375,
+          "start_sample": 8000,
+          "end_sample": 54439,
+          "sentence_id": "s04",
+          "page": 2,
+          "expected": "But it was all in vain, for they were just out of reach.",
+          "heard": "But it was all in vain, for they were just out of reach."
+        }
+      ]
+    },
+    {
+      "name": "ch02_take1.wav",
+      "sample_rate": 16000,
+      "channels": 1,
+      "duration": 28.56225,
+      "num_samples": 456996,
+      "noise_dbfs_rms": -65.0,
+      "events": [
+        {
+          "type": "read",
+          "start": 0.5,
+          "end": 2.9640625,
+          "start_sample": 8000,
+          "end_sample": 47425,
+          "sentence_id": "s07",
+          "page": 3,
+          "expected": "Chapter Two. The Tortoise and the Hare.",
+          "heard": "Chapter Two. The Tortoise and the Hare."
+        },
+        {
+          "type": "read",
+          "start": 3.8640625,
+          "end": 6.82675,
+          "start_sample": 61825,
+          "end_sample": 109228,
+          "sentence_id": "s08",
+          "page": 3,
+          "expected": "A hare once made fun of a tortoise for being so slow.",
+          "heard": "A hare once made fun of a tortoise for being so slow."
+        },
+        {
+          "type": "stutter",
+          "start": 7.27675,
+          "end": 7.7058125,
+          "start_sample": 116428,
+          "end_sample": 123293,
+          "sentence_id": "s09",
+          "page": 3,
+          "expected": null,
+          "heard": "The",
+          "detail": {
+            "word": "The"
+          }
+        },
+        {
+          "type": "read",
+          "start": 7.7058125,
+          "end": 11.0,
+          "start_sample": 123293,
+          "end_sample": 176000,
+          "sentence_id": "s09",
+          "page": 3,
+          "expected": "The tortoise laughed and said that he would win a race against him.",
+          "heard": "The tortoise laughed and said that he would win a race against him."
+        },
+        {
+          "type": "read",
+          "start": 11.9,
+          "end": 15.1516875,
+          "start_sample": 190400,
+          "end_sample": 242427,
+          "sentence_id": "s10",
+          "page": 3,
+          "expected": "The hare soon ran far ahead, and lay down to take a nap.",
+          "heard": "The hare soon ran far ahead, and lay down to take a nap."
+        },
+        {
+          "type": "read",
+          "start": 16.0516875,
+          "end": 19.303375,
+          "start_sample": 256827,
+          "end_sample": 308854,
+          "sentence_id": "s10",
+          "page": 3,
+          "expected": "The hare soon ran far ahead, and lay down to take a nap.",
+          "heard": "The hare soon ran far ahead, and lay down to take a nap."
+        },
+        {
+          "type": "long_silence",
+          "start": 19.303375,
+          "end": 21.903375,
+          "start_sample": 308854,
+          "end_sample": 350454,
+          "sentence_id": null,
+          "page": 3,
+          "expected": null,
+          "heard": null,
+          "detail": {
+            "seconds": 2.6,
+            "after": "s10"
+          }
+        },
+        {
+          "type": "read",
+          "start": 21.903375,
+          "end": 24.181,
+          "start_sample": 350454,
+          "end_sample": 386896,
+          "sentence_id": "s11",
+          "page": 3,
+          "expected": "The tortoise plodded on and never stopped.",
+          "heard": "The tortoise plodded on and never stopped."
+        },
+        {
+          "type": "read",
+          "start": 24.631,
+          "end": 28.06225,
+          "start_sample": 394096,
+          "end_sample": 448996,
+          "sentence_id": "s12",
+          "page": 3,
+          "expected": "When the hare woke up, the tortoise was already at the finish line.",
+          "heard": "When the hare woke up, the tortoise was already at the finish line."
+        }
+      ]
+    }
+  ],
+  "take_groups": [
+    {
+      "sentence_id": "s04",
+      "takes": [
+        {
+          "file": "ch01_take1.wav",
+          "start": 19.5593125,
+          "end": 22.512625,
+          "type": "misread"
+        },
+        {
+          "file": "ch01_take2.wav",
+          "start": 0.5,
+          "end": 3.4024375,
+          "type": "read"
+        }
+      ],
+      "preferred_index": 1
+    },
+    {
+      "sentence_id": "s10",
+      "takes": [
+        {
+          "file": "ch02_take1.wav",
+          "start": 11.9,
+          "end": 15.1516875,
+          "type": "read"
+        },
+        {
+          "file": "ch02_take1.wav",
+          "start": 16.0516875,
+          "end": 19.303375,
+          "type": "read"
+        }
+      ],
+      "preferred_index": 1
+    }
+  ],
+  "counts": {
+    "commentary": 1,
+    "false_start": 1,
+    "long_silence": 2,
+    "misread": 1,
+    "read": 13,
+    "skip": 1,
+    "stutter": 2,
+    "take_group": 2
+  }
+}

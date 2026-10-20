@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hillaudio"
+version = "0.0.1"
+description = "HillAudiobook engine: first-pass audiobook editing, local only."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "numpy>=1.26",
+    "soundfile>=0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "httpx2",  # Starlette's TestClient transport (replaces httpx)
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[tool.setuptools.packages.find]
+include = ["hillaudio*"]
+
+[tool.setuptools.package-data]
+hillaudio = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# scripts/ lives at the repo root; tests import the fixture generator from there.
+pythonpath = [".", "../scripts"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "../scripts"
+files = ["hillaudio", "tests", "../scripts"]
+
+[[tool.mypy.overrides]]
+module = ["soundfile"]
+ignore_missing_imports = true
