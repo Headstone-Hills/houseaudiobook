@@ -13,6 +13,8 @@ test("create project, import, inspect sources", async ({ page }) => {
   const consoleErrors: string[] = [];
   page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));
 
+  // The engine is shared by all tests and keeps its open project; start clean.
+  await page.request.post("/api/project/close");
   await page.goto("/");
   await expect(page.getByText(/Engine .* ready/)).toBeVisible();
   await page.getByLabel("Name").fill("Fox and Grapes");

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { FUNCTIONS } from "../test-utils";
-import { describeFormat, formatBytes, formatDuration } from "./format";
+import { describeFormat, formatBytes, formatDuration, plural } from "./format";
 import { dependents, explain, prerequisites, toggle } from "./functions";
 import { pickLevel, toColumns } from "./peaks";
 
@@ -56,5 +56,6 @@ describe("format", () => {
     expect(
       describeFormat({ format: "mp3", sample_rate: 44100, channels: 2, bit_depth: null, bit_rate: 128000 }),
     ).toBe("MP3 · 44.1 kHz · 128 kbps · stereo");
+    expect([plural(1, "page"), plural(0, "page"), plural(3, "chapter")]).toEqual(["1 page", "0 pages", "3 chapters"]);
   });
 });

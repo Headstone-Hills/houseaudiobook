@@ -101,11 +101,14 @@ def test_create_open_and_recent(client: TestClient, location: Path) -> None:
     )
     s = client.get("/api/settings").json()
     assert s["peaks"] == {"base": BASE, "factor": 4, "levels": LEVELS}
+    assert s["page_defaults"]["mode"] == "auto"
+    assert s["page_defaults"]["words_per_page"] == 250
     recent = s["recent"]
     assert [r["name"] for r in recent] == ["Book"]
 
     assert client.post("/api/project/close").json() == {"closed": True}
-    assert client.get("/api/project").status_code == 409
+    assert client.get("/api/project").json() is None
+    assert client.post("/api/project/sources/import", json={"paths": ["/x.wav"]}).status_code == 409
     assert client.post("/api/projects/open", json={"path": proj["path"]}).json()["name"] == "Book"
     assert client.post("/api/projects/open", json={"path": str(location)}).status_code == 400
 

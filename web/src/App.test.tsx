@@ -75,10 +75,14 @@ test("project screen: sources, warnings, relink, and refresh when a job finishes
     sources: [source(), missing],
     warnings: ["sources have mixed sample rates (16000 Hz, 48000 Hz); the engine resamples internally"],
   });
+  let opened = false;
   mockApi({
     ...home,
-    "POST /api/projects/open": () => current,
-    "GET /api/project": () => current,
+    "POST /api/projects/open": () => {
+      opened = true;
+      return current;
+    },
+    "GET /api/project": () => (opened ? current : null),
     "GET /api/project/sources/1/peaks": { min: [], max: [], total_buckets: 0, num_frames: 0 },
   });
   render(<App />);
@@ -137,4 +141,27 @@ test("import by path posts paths and mode", async () => {
   await screen.findByLabelText(/import by path/);
   await act(async () => {});
   expect(calls).toEqual([{ paths: ["/a.wav", "/b.mp3"], mode: "reference" }]);
+});
+
+test("a reload continues in the open project", async () => {
+  mockApi({ ...home, "GET /api/project": project({ name: "Open Book" }) });
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "Open Book" })).toBeInTheDocument();
+});
+
+test("updates about old jobs don't pull the user off the Projects screen", async () => {
+  // Regression: a finished-job update made the app fetch and show the engine's project.
+  const fetchMock = mockApi({ ...home, "GET /api/project": null });
+  render(<App />);
+  await screen.findByRole("button", { name: "Old Book" });
+  act(() =>
+    FakeWebSocket.last?.emit({
+      type: "jobs",
+      jobs: [{ id: "old", kind: "import", label: "x", status: "done", progress: 1, message: "", result: null, error: null }],
+    }),
+  );
+  await act(async () => {});
+  const projectCalls = fetchMock.mock.calls.filter(([url]) => String(url) === "/api/project");
+  expect(projectCalls).toHaveLength(1); // only the initial load
+  expect(screen.getByRole("heading", { name: "New project" })).toBeInTheDocument();
 });

@@ -20,10 +20,12 @@ MAX_UNITS_PER_REQUEST = 1000
 
 
 class ManuscriptSource(BaseModel):
-    """Exactly one of: a local path, or the id of an earlier upload."""
+    """Exactly one of: a local path, an earlier upload, or the project's current copy
+    (to preview new page settings before re-mapping)."""
 
     path: str | None = None
     upload_id: str | None = None
+    current: bool = False
 
 
 class ManuscriptRequest(BaseModel):
@@ -44,8 +46,14 @@ def parse_settings(raw: dict[str, Any]) -> PageSettings:
 
 def resolve(state: EngineState, src: ManuscriptSource) -> tuple[Path, str, str | None]:
     """(file, original name, upload id if it was an upload)."""
-    if (src.path is None) == (src.upload_id is None):
-        raise HTTPException(400, "give either a path or an upload_id")
+    if sum([src.path is not None, src.upload_id is not None, src.current]) != 1:
+        raise HTTPException(400, "give exactly one of path, upload_id or current")
+    if src.current:
+        p = state.require_project()
+        stored = importer.stored_copy(p)
+        if stored is None:
+            raise HTTPException(404, "no manuscript has been imported")
+        return stored[0], stored[1], None
     if src.upload_id is not None:
         if src.upload_id not in state.uploads:
             raise HTTPException(404, "upload not found; upload the file again")

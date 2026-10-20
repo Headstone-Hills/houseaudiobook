@@ -31,3 +31,8 @@ export function describeFormat(s: {
     .filter(Boolean)
     .join(" · ");
 }
+
+/** plural(1, "page") -> "1 page"; plural(3, "page") -> "3 pages". */
+export function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}

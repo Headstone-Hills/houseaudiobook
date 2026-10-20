@@ -29,6 +29,7 @@ export interface Settings {
   default_location: string;
   recent: Recent[];
   peaks: PeakSettings;
+  page_defaults: PageSettings;
 }
 
 export type SourceStatus = "ok" | "missing" | "modified" | "checking";
@@ -62,7 +63,74 @@ export interface ProjectSummary {
   functions: string[];
   sources: Source[];
   warnings: string[];
+  manuscript: ManuscriptInfo | null;
 }
+
+export type PageMode = "auto" | "markers" | "breaks" | "pdf" | "estimate";
+
+/** Mirrors engine PageSettings (text/pages.py). */
+export interface PageSettings {
+  mode: PageMode;
+  marker_pattern: string;
+  form_feed_breaks: boolean;
+  words_per_page: number;
+  first_numbered_page: number;
+  use_pdf_labels: boolean;
+  skip_front_matter: boolean;
+}
+
+export type ManuscriptFormat = "txt" | "md" | "docx" | "pdf";
+export type UnitCounts = { chapter: number; paragraph: number; sentence: number };
+
+export interface ManuscriptInfo {
+  original_name: string;
+  original_path: string;
+  sha256: string;
+  size_bytes: number;
+  format: ManuscriptFormat;
+  settings: PageSettings;
+  page_mode: Exclude<PageMode, "auto">;
+  page_count: number;
+  estimated: boolean;
+  warnings: string[];
+  counts: UnitCounts;
+  imported_at: string;
+  mapped_at: string;
+  status: "ok" | "missing" | "modified" | "checking";
+}
+
+export interface ManuscriptUnit {
+  id?: number;
+  kind: "chapter" | "paragraph" | "sentence";
+  ordinal: number;
+  parent_id?: number | null;
+  text: string;
+  char_start: number;
+  char_end: number;
+  page: number | null;
+  page_label: string;
+  page_end: number | null;
+  page_end_label: string;
+  page_estimated: boolean;
+  front_matter: boolean;
+}
+
+export interface ManuscriptPreview {
+  name: string;
+  format: ManuscriptFormat;
+  page_source: "markers" | "breaks" | "pdf" | "none";
+  page_mode: Exclude<PageMode, "auto">;
+  page_count: number;
+  estimated: boolean;
+  counts: UnitCounts;
+  warnings: string[];
+  settings: PageSettings;
+  pages: { label: string; physical: number | null; front_matter: boolean; first_text: string }[];
+  sentences: ManuscriptUnit[];
+}
+
+/** Where a manuscript comes from: a local path, an upload, or the project's copy. */
+export type ManuscriptSource = { path: string } | { upload_id: string } | { current: true };
 
 export type JobStatus = "queued" | "running" | "done" | "failed" | "cancelled";
 
@@ -118,7 +186,8 @@ export const api = {
     request<ProjectSummary>("POST", "/api/projects", { location, name, functions }),
   openProject: (path: string) => request<ProjectSummary>("POST", "/api/projects/open", { path }),
   closeProject: () => request<{ closed: boolean }>("POST", "/api/project/close"),
-  project: () => request<ProjectSummary>("GET", "/api/project"),
+  /** The open project, or null if none is open. */
+  project: () => request<ProjectSummary | null>("GET", "/api/project"),
   importPaths: (paths: string[], mode: "copy" | "reference") =>
     request<{ job_id: string }>("POST", "/api/project/sources/import", { paths, mode }),
   relink: (sourceId: number, path: string) =>
@@ -129,6 +198,17 @@ export const api = {
       `/api/project/sources/${sourceId}/peaks?level=${level}&start=${start}`,
     ),
   cancelJob: (jobId: string) => request<Job>("POST", `/api/jobs/${jobId}/cancel`),
+  previewManuscript: (source: ManuscriptSource, settings: Partial<PageSettings>) =>
+    request<ManuscriptPreview>("POST", "/api/project/manuscript/preview", { source, settings }),
+  importManuscript: (source: ManuscriptSource, settings: Partial<PageSettings>) =>
+    request<{ job_id: string }>("POST", "/api/project/manuscript", { source, settings }),
+  remapManuscript: (settings: Partial<PageSettings>) =>
+    request<{ job_id: string }>("PUT", "/api/project/manuscript/settings", { settings }),
+  manuscriptUnits: (kind: ManuscriptUnit["kind"], offset: number, limit: number) =>
+    request<{ total: number; offset: number; units: ManuscriptUnit[] }>(
+      "GET",
+      `/api/project/manuscript/units?kind=${kind}&offset=${offset}&limit=${limit}`,
+    ),
 };
 
 /** All buckets of one level. The engine pages large responses, and a 10-hour
@@ -146,27 +226,40 @@ export async function fetchAllPeaks(sourceId: number, level: number): Promise<Pe
   return { ...first, min, max };
 }
 
-/** Stream a dropped or picked file to the engine. XHR rather than fetch because
- * fetch can't report upload progress, and a narration file can be gigabytes. */
-export function uploadFile(file: File, onProgress?: (fraction: number) => void): Promise<string> {
+/** Stream a file to the engine with a PUT. XHR rather than fetch because fetch
+ * can't report upload progress, and a narration file can be gigabytes. */
+function uploadTo<T>(url: string, file: File, onProgress?: (fraction: number) => void): Promise<T> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("PUT", `/api/project/sources/upload?filename=${encodeURIComponent(file.name)}`);
+    xhr.open("PUT", `${url}?filename=${encodeURIComponent(file.name)}`);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress?.(e.loaded / e.total);
     };
     xhr.onload = () => {
+      let data: (T & { detail?: string }) | undefined;
       try {
-        const data = JSON.parse(xhr.responseText) as { job_id?: string; detail?: string };
-        if (xhr.status === 200 && data.job_id) resolve(data.job_id);
-        else reject(new EngineError(data.detail ?? `upload failed (${xhr.status})`));
+        data = JSON.parse(xhr.responseText) as T & { detail?: string };
       } catch {
-        reject(new EngineError(`upload failed (${xhr.status})`));
+        // fall through to the status-code message
       }
+      if (xhr.status === 200 && data) resolve(data);
+      else reject(new EngineError(data?.detail ?? `upload failed (${xhr.status})`));
     };
     xhr.onerror = () => reject(new EngineError("upload failed: engine unreachable"));
     xhr.send(file);
   });
+}
+
+/** Upload an audio file; resolves to the import job's id. */
+export async function uploadFile(file: File, onProgress?: (fraction: number) => void): Promise<string> {
+  const r = await uploadTo<{ job_id: string }>("/api/project/sources/upload", file, onProgress);
+  return r.job_id;
+}
+
+/** Upload a manuscript for preview/import; resolves to its upload id. */
+export async function uploadManuscript(file: File): Promise<string> {
+  const r = await uploadTo<{ upload_id: string }>("/api/project/manuscript/upload", file);
+  return r.upload_id;
 }
 
 /** Subscribe to job snapshots; reconnects if the engine restarts. Returns an unsubscribe. */

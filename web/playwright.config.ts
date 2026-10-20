@@ -10,6 +10,8 @@ process.env.E2E_PROJECTS = join(runDir, "projects");
 
 export default defineConfig({
   testDir: "e2e",
+  // One engine holds one open project at a time (D-015), so tests must not run in parallel.
+  workers: 1,
   timeout: 60_000,
   use: {
     baseURL: "http://127.0.0.1:5173",

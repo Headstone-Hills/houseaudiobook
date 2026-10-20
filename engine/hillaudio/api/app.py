@@ -30,6 +30,7 @@ from hillaudio.ingest.probe import UnsupportedAudio, probe
 from hillaudio.progress import never_cancel, no_progress
 from hillaudio.store.project import Project, ProjectError
 from hillaudio.text import importer as text_importer
+from hillaudio.text.pages import PageSettings
 
 MAX_PEAKS_PER_REQUEST = 50_000
 WS_POLL_S = 0.1
@@ -182,6 +183,7 @@ def create_app(
             "recent": [asdict(r) for r in settings.load_recent()],
             # The UI picks a peak level for its zoom from these, rather than hard-coding them.
             "peaks": {"base": BASE, "factor": FACTOR, "levels": LEVELS},
+            "page_defaults": PageSettings().to_json(),
         }
 
     @app.post("/api/projects")
@@ -215,8 +217,9 @@ def create_app(
         return {"closed": True}
 
     @app.get("/api/project")
-    def get_project() -> dict[str, Any]:
-        return summary(state.require_project())
+    def get_project() -> dict[str, Any] | None:
+        """The open project, or null: "none open" is a normal answer here, not an error."""
+        return summary(state.project) if state.project is not None else None
 
     @app.post("/api/project/sources/import")
     def import_paths(body: ImportPaths) -> dict[str, str]:

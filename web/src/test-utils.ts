@@ -36,6 +36,15 @@ export const SETTINGS: Settings = {
   default_location: "/Users/me/HillAudiobook Projects",
   recent: [{ path: "/p/Old Book.hillproj", name: "Old Book", opened_at: "2026-10-01T00:00:00+00:00" }],
   peaks: { base: 512, factor: 4, levels: 4 },
+  page_defaults: {
+    mode: "auto",
+    marker_pattern: String.raw`\[\s*p(?:age|g)?\.?\s*(\d+)\s*\]`,
+    form_feed_breaks: true,
+    words_per_page: 250,
+    first_numbered_page: 1,
+    use_pdf_labels: true,
+    skip_front_matter: false,
+  },
 };
 
 export function source(overrides: Partial<Source> = {}): Source {
@@ -71,6 +80,7 @@ export function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary
     functions: FUNCTIONS.map((f) => f.key),
     sources: [],
     warnings: [],
+    manuscript: null,
     ...overrides,
   };
 }

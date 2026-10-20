@@ -58,6 +58,11 @@ def test_preview_then_import_txt(client: TestClient) -> None:
     assert prev["counts"] == {"chapter": 2, "paragraph": 6, "sentence": 13}
     assert [p["label"] for p in prev["pages"]] == ["1", "2", "3"]
     assert prev["pages"][1]["first_text"].startswith("But it was all in vain")
+    pdf_prev = client.post(
+        "/api/project/manuscript/preview",
+        json={"source": {"path": str(FIXTURES / "manuscript.pdf")}},
+    ).json()
+    assert pdf_prev["pages"][0]["first_text"] == "Two Fables from Aesop"  # stops at page end
     assert client.get("/api/project/manuscript").json() is None  # preview writes nothing
 
     job = wait(client, client.post("/api/project/manuscript", json={"source": src}))
@@ -81,6 +86,10 @@ def test_remap_pdf_offset_and_front_matter(client: TestClient) -> None:
 
     # Ignore the PDF's labels and count pages instead, skipping the title page.
     settings = {"use_pdf_labels": False, "first_numbered_page": 2, "skip_front_matter": True}
+    prev = client.post(
+        "/api/project/manuscript/preview", json={"source": {"current": True}, "settings": settings}
+    ).json()
+    assert prev["sentences"][0]["page_label"] == "1" and prev["name"] == "manuscript.pdf"
     job = wait(client, client.put("/api/project/manuscript/settings", json={"settings": settings}))
     assert job["status"] == "done", job
     assert all_sentences(client) == TRUTH

@@ -127,14 +127,18 @@ def summary(a: Analysis, fmt: str, settings: PageSettings) -> dict[str, Any]:
 def preview(data: bytes, fmt: str, settings: PageSettings) -> dict[str, Any]:
     """What an import with these settings would produce; nothing is written."""
     a = analyze(data, fmt, settings)
+    ends = [*a.pages.starts[1:], len(a.doc.text)]
     pages = [
         {
             "label": ref.label,
             "physical": ref.physical,
             "front_matter": ref.front_matter,
-            "first_text": a.doc.text[start : start + 80],
+            # Stop at the next page so a short page doesn't show the next one's text.
+            "first_text": a.doc.text[start : min(start + 80, end)].strip(),
         }
-        for start, ref in list(zip(a.pages.starts, a.pages.refs, strict=True))[:PREVIEW_PAGES]
+        for start, end, ref in list(zip(a.pages.starts, ends, a.pages.refs, strict=True))[
+            :PREVIEW_PAGES
+        ]
     ]
     first_sentences = [unit_json(u) for u in a.units if u.kind == "sentence"][:PREVIEW_UNITS]
     return summary(a, fmt, settings) | {"pages": pages, "sentences": first_sentences}
@@ -272,6 +276,15 @@ def remap(project: Project, settings: PageSettings) -> dict[str, Any]:
         _write_units(project, a, settings, conn)
         project.log(conn, "remap_manuscript_pages", {"settings": settings.to_json()}, "user")
     return summary(a, row["format"], settings)
+
+
+def stored_copy(project: Project) -> tuple[Path, str] | None:
+    """The project's copy of its manuscript, and the original file name."""
+    with project.db() as conn:
+        row = conn.execute(
+            "SELECT stored_path, original_name FROM manuscript WHERE id = 1"
+        ).fetchone()
+    return (project.root / row["stored_path"], row["original_name"]) if row else None
 
 
 def verify_copy(project: Project) -> str | None:

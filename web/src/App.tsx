@@ -11,6 +11,11 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const finished = useRef(new Set<string>());
 
+  const showing = useRef(false); // is a project on screen? (read inside the job callback)
+  useEffect(() => {
+    showing.current = project !== null;
+  }, [project]);
+
   const loadHome = useCallback(() => {
     Promise.all([api.settings(), api.functions()])
       .then(([s, f]) => {
@@ -20,17 +25,29 @@ export function App() {
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
 
-  useEffect(loadHome, [loadHome]);
+  useEffect(() => {
+    loadHome();
+    // A reload continues in the project the engine has open, if any.
+    api
+      .project()
+      .then(setProject)
+      .catch(() => undefined); // engine down: the settings load reports it
+  }, [loadHome]);
 
-  // When any job finishes, the project's sources or statuses may have changed.
+  // When a job finishes, the open project's sources or statuses may have changed.
+  // Only refresh a project already on screen: an update about old jobs must never
+  // pull the user out of the Projects screen (regression: it did, mid-typing).
   useEffect(
     () =>
       subscribeJobs((next) => {
         setJobs(next);
         const newlyDone = next.filter((j) => j.status !== "running" && j.status !== "queued" && !finished.current.has(j.id));
-        if (newlyDone.length) {
-          newlyDone.forEach((j) => finished.current.add(j.id));
-          api.project().then(setProject).catch(() => undefined);
+        newlyDone.forEach((j) => finished.current.add(j.id));
+        if (newlyDone.length && showing.current) {
+          api
+            .project()
+            .then((p) => p && setProject(p))
+            .catch(() => undefined);
         }
       }),
     [],
@@ -52,6 +69,7 @@ export function App() {
       project={project}
       jobs={jobs}
       peakSettings={settings.peaks}
+      pageDefaults={settings.page_defaults}
       onChanged={setProject}
       onClose={() => {
         api
