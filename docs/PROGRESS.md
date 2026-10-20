@@ -86,22 +86,39 @@ Risks:
 - Re-mapping replaces unit ids (D-023); M4's stable keys must not depend on them.
 - .docx without explicit breaks falls back to an estimate, even if the author sees real pages in Word (D-024).
 
-## M3 · Transcribe + Compare to Text: in progress
+## M3 · Transcribe + Compare to Text: done (2026-10-20)
 
-Plan:
-1. **Spike exit (01-asr).** `text/normalize.py` (case, punctuation, numbers, contractions, hyphens); `scripts/bench_asr.py` benchmarks `small.en`, `medium.en`, `large-v3-turbo` on the fixtures: WER against the heard text, disfluency survival, boundary error, real-time factor. Decide D-007.
-2. **`engine/hillaudio/asr/`.** A `Transcriber` interface; a faster-whisper backend (optional `asr` extra, models in `$HILLAUDIO_HOME/models`, never in the repo); transcripts cached by file hash + settings; cancellable jobs on a serial `asr` lane.
-3. **`analysis/align.py`** (pure). Normalized-token anchors, chaining with jump penalties (restarts and retakes), then dynamic-programming word alignment per run. Each sentence gets *readings* with a match score and classified differences: missing, extra, substitution, transposition, reordered, mispronunciation suspected. Transcript words outside every run are unaligned (commentary).
-4. **Store and API.** Schema v3: `analysis_run`, `transcript_word`, `alignment`. Endpoints to run Transcribe / Compare to Text and read results. A minimal comparison view in the UI; the full Issues panel is M4.
-5. **Tests.**
-   - A fake transcriber built from ground truth (perfect ASR), so alignment can be tested exactly.
-   - The same with seeded ASR noise, measuring precision/recall against targets.
-   - Normalization unit tests.
-   - The real-model benchmark is recorded in `docs/bench/`.
-- **Risks.**
-  - Whisper drops disfluencies (seen with tiny.en: a stutter vanished), so cleanup (M5) can't rely on the transcript alone.
-  - Robotic TTS fixtures understate real-narration accuracy.
-  - Alignment cost on 10-hour books, so the work is kept per file and banded.
+Acceptance criteria (SPEC §9):
+- [x] **Word-level transcripts**: faster-whisper small.en with a disfluency prompt (D-028). Words have timestamps and confidence; transcripts are cached by file hash + settings; jobs are cancellable. Timestamps are snapped to the audio (raw p95 500 ms, snapped 10-12 ms).
+- [x] **Alignment with per-unit scores**: each manuscript sentence gets readings (takes) with coverage, score and classified differences (D-029, D-030). False starts, stutters, off-script speech, retakes and pickups are each represented explicitly.
+- [x] **Report on fixtures matches injected errors above target accuracy**:
+  - Perfect (fake) ASR: precision 1.0, recall 1.0 on the injected misread and skip, and every other injected event is reproduced exactly (`test_align.py`).
+  - Noisy ASR, 5-20% wrong words plus dropped stutters, over 20 seeds: at least 99% of sentences found at ≤10% noise and at least 95% at 20%; recall 1.0 on injected errors.
+  - **Real small.en** through the app pipeline (`test_real_model.py`, opt-in): exactly the injected misread and skip flagged, both stutters found, the commentary unaligned. Benchmark: 15/15 sentences found, precision 1.00, recall 1.00 (`docs/bench/asr-2026-10-20.md`).
+- [x] Spike 01 closed with measurements (D-028); D-007 and D-008 confirmed.
+- [x] UI: Compare to Text panel. Model choice with its download size; run; results filterable (with differences / not read / clean / all); each sentence's takes with times, scores and differences; off-script speech.
+- [x] Immutability test covers Transcribe + Compare to Text.
+
+`make check`: 178 engine tests (1 opt-in skipped), 23 web tests. `make e2e`: 3 tests.
+
+Bugs found and fixed, with regression tests:
+- **Benchmark measurement:** stutter survival counted the sentence's own word; a "-" token was counted as a word; a stutter word was taken as the sentence start.
+- **Boundary snapping:** quiet endings were clipped; a start was snapped into the previous (stutter) word.
+- **Alignment:** a misread final word fell into the next unaligned stretch; false starts were padded with "missing" words; a retake's first word was given to the next sentence; a DP tie paired words across a skipped sentence.
+- **UI:** an unnamed list; HTML lists inside `<summary>`.
+
+Deferred to M4 (Issues):
+- Turning differences into issues with severity, stable keys and decisions.
+- Lowering severity for phonetically close substitutions. Every false flag in the benchmark was a near-homophone, e.g. "trellis"/"trelleys".
+- Jump-to-audio playback.
+- Overlong silences.
+
+Risks:
+- The model decision rests on a synthetic voice and 13 sentences. Re-check on a real narration recording before M8.
+- Long restarts appear as partial readings and short ones as "extra" differences (D-030); M5 must handle both.
+- Re-mapping pages clears comparison results (by design, D-031); the panel then says the results are out of date and asks for a re-run (transcripts are reused).
+
+## M4 · Issues pipeline: not started
 
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.

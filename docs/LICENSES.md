@@ -4,7 +4,7 @@ Every dependency and model is checked before bundling (SPEC §12). Versions are
 what is installed or evaluated as of the date shown. "Dev only" means it is never
 shipped in the app.
 
-## In use (updated M2, 2026-10-20)
+## In use (updated M3, 2026-10-20)
 
 | Package | Version | License | Shipped? |
 |---|---|---|---|
@@ -12,6 +12,14 @@ shipped in the app.
 | uvicorn | 0.54.0 | BSD-3-Clause | yes |
 | websockets | 17.3 | BSD-3-Clause | yes (WebSocket support for uvicorn) |
 | pypdf | 6.21.1 | BSD-3-Clause | yes (PDF manuscripts) |
+| rapidfuzz | 3.14.6 | MIT | yes (alignment fallback) |
+| faster-whisper | 1.2.1 | MIT | yes (`asr` extra) |
+| ctranslate2 | 4.8.3 | MIT | yes (faster-whisper runtime) |
+| onnxruntime | 1.31.0 | MIT | yes (faster-whisper dependency) |
+| av (PyAV) | 18.1.0 | BSD-3-Clause; **bundles FFmpeg libraries (LGPL)** | yes (faster-whisper decodes audio with it); check its FFmpeg build's license before M9 bundling |
+| tokenizers | 0.23.3 | Apache-2.0 | yes (faster-whisper dependency) |
+| huggingface-hub | 2.2.0 | Apache-2.0 | yes (model download) |
+| Whisper weights: Systran/faster-whisper-small.en (default), tiny.en | n/a | MIT (model cards, checked 2026-10-20) | downloaded on first use, never bundled or committed |
 | reportlab | 5.0.1 | BSD | dev only (generates PDF fixtures) |
 | numpy | 2.4.x | BSD-3-Clause (plus 0BSD, MIT, Zlib, CC0 parts) | yes |
 | soundfile | 0.14.0 | BSD-3-Clause; bundles libsndfile (LGPL-2.1) | yes |
@@ -30,11 +38,9 @@ shipped in the app.
 
 | Package / model | Version | License | Note |
 |---|---|---|---|
-| faster-whisper | 1.2.1 | MIT | D-007 default ASR |
 | ctranslate2 | 4.8.3 | MIT | faster-whisper runtime |
 | mlx-whisper | 0.4.3 | MIT | optional Apple Silicon backend |
-| Whisper model weights (OpenAI) | n/a | MIT | to confirm on each model card before first-run download (M9) |
-| rapidfuzz | 3.14.6 | MIT | manuscript alignment (M3) |
+| Other Whisper weights (medium.en, large-v3-turbo) | n/a | to confirm on each model card before offering them in M9 (the turbo card lookup failed on 2026-10-20) | optional models |
 | python-docx | 1.2.0 | MIT | not adopted: .docx is read with the standard library (D-022) |
 | PyMuPDF | 2.0 | AGPL-3.0 or commercial | **not adopted** (D-022) |
 | stable-ts | 2.19.1 | MIT | not adopted: archived |

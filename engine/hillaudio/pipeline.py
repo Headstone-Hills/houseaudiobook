@@ -184,7 +184,11 @@ def run_analysis(
         if missing:
             raise PipelineError(f"no transcript yet for {', '.join(missing)}; transcribe first")
 
-    run_id = start_run(project, stages, {"asr": transcriber.settings.to_json()})
+    run_id = start_run(
+        project,
+        stages,
+        {"asr": transcriber.settings.to_json(), "units_version": units_version(project)},
+    )
     status = "failed"
     try:
         # Transcription dominates the time: give it 90% of the bar, by audio duration.
@@ -224,6 +228,14 @@ def run_analysis(
 
 
 # -- results -------------------------------------------------------------------------------------
+
+
+def units_version(project: Project) -> int:
+    """How many times the manuscript's units have been (re)written."""
+    try:
+        return int(project.meta("units_version"))
+    except KeyError:
+        return 0
 
 
 def latest_run(project: Project, stage: str = "compare_text") -> int | None:
@@ -282,4 +294,16 @@ def comparison(project: Project, run_id: int) -> dict[str, Any]:
                 "best_score": best["score"] if best else None,
             }
         )
-    return {"run_id": run_id, "sentences": sentences_out, "unaligned": [dict(r) for r in unaligned]}
+    # Re-mapping the manuscript after this run replaced the units it compared
+    # against (D-031): the results are out of date until Compare to Text re-runs.
+    with project.db() as conn:
+        row = conn.execute(
+            "SELECT options_json FROM analysis_run WHERE id = ?", (run_id,)
+        ).fetchone()
+    stale = json.loads(row["options_json"]).get("units_version") != units_version(project)
+    return {
+        "run_id": run_id,
+        "stale": stale,
+        "sentences": sentences_out,
+        "unaligned": [dict(r) for r in unaligned],
+    }

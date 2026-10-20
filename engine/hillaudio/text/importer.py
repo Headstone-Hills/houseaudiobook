@@ -173,6 +173,12 @@ def _write_units(project: Project, a: Analysis, settings: PageSettings, conn: An
     # Transcripts stay cached, so re-running Compare to Text is quick.
     conn.execute("DELETE FROM unaligned_segment")
     conn.execute("DELETE FROM manuscript_unit")
+    # Bumped on every rewrite, so a comparison can tell it ran against old units
+    # (timestamps are too coarse: a run and a re-map can share a second).
+    conn.execute(
+        "INSERT INTO project_meta (key, value) VALUES ('units_version', '1')"
+        " ON CONFLICT (key) DO UPDATE SET value = CAST(value AS INTEGER) + 1"
+    )
     ids: list[int] = []
     for u in a.units:
         cur = conn.execute(

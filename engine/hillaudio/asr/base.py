@@ -13,7 +13,16 @@ from hillaudio.progress import CheckCancel, Progress
 # Primes Whisper to keep disfluencies: without it every model tested dropped every
 # injected stutter; with it small.en kept them all (docs/bench/asr-2026-10-20.md).
 DISFLUENCY_PROMPT = "Um, uh, the- the, I mean, sorry, let me start again."
-MODELS = ("tiny.en", "base.en", "small.en", "medium.en", "large-v3-turbo")
+# Download size of each model's weights in MB (measured 2026-10-20), shown before
+# the first use downloads them.
+MODEL_SIZES_MB = {
+    "tiny.en": 75,
+    "base.en": 141,
+    "small.en": 464,
+    "medium.en": 1500,
+    "large-v3-turbo": 1600,
+}
+MODELS = tuple(MODEL_SIZES_MB)
 
 
 @dataclass(frozen=True)

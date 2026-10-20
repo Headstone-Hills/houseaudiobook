@@ -263,3 +263,76 @@ that's already on screen.
   *.hf.co allowed in the environment.
 - Caveat: synthetic voice and a small sample. Re-check on a real narration recording
   before M8.
+
+## D-029 · Alignment design (M3)
+`analysis/align.py`, pure. Narration isn't a clean read, so there is no single
+global alignment:
+- **Anchors**: 3-token runs equal in transcript and manuscript, skipping 3-grams
+  that occur more than 4 times in the manuscript (ambiguous).
+- **Chaining** (DP over anchors, 64 lookback): continuing costs one per token of
+  drift (edit-distance-like); any other move is a *jump* (3.5). Up to 3 extra
+  words stay inside a sentence; longer insertions (false starts, commentary)
+  and skips of more than 3 words become jumps, i.e. new runs.
+- **Word alignment** is edit-distance DP between consecutive anchors (linear in
+  practice). Ties prefer, in order: match, missing, extra, substitution, so two
+  unrelated words are never paired just because it costs the same (regression:
+  "now" of a skipped line was paired with "then" of the next).
+- **Run edges** extend to sentence boundaries, allowing mismatches, so a misread
+  last word stays with its sentence. They never cross a pause of 0.35 s or more,
+  and never extend a run that a restart re-reads (that run is a false start).
+  A run that reaches 3 or fewer tokens into a sentence the next run re-reads gives
+  those tokens back (an anchor matching across a take boundary).
+- **Fallback**: an unaligned stretch whose text is at least 85% similar
+  (rapidfuzz ratio) to a short sentence is aligned to it. A two-word pickup can't
+  form a 3-token anchor.
+
+## D-030 · What a reading and its differences mean (M3)
+- A **reading** is one run's pass over one sentence: coverage, score
+  (`matches / max(ops, sentence length)`), and differences. A *complete* reading
+  covers the whole sentence; a partial one before a restart is a **false start**.
+- **Differences**: missing, extra, substitution ("misread" in the UI),
+  transposition (adjacent swap), reordered (a stretch said elsewhere in the same
+  sentence), and mispronunciation (a match with ASR confidence under 0.5: a
+  suspicion, not counted in the score).
+- **Stutters** are an "extra" difference on the sentence they repeat ("The. The
+  vine..."). So a restart is either a partial reading (4+ words) or an extra
+  difference (up to 3 words); M5 cleanup handles both.
+- **Off-script words** between sentences that don't repeat the next sentence's
+  opening belong to no sentence: they're *unaligned* (stored as
+  `unaligned_segment`), so a clean reading isn't marked down for "sorry".
+- A reading's times span the sentence proper. Extra words at its edges are
+  differences with their own times, not part of the take.
+- A sentence's **best take** is complete, has the fewest text errors, then the
+  highest score. A sentence is "clean" if its best take has no text errors
+  (extra words don't count; they are cleanup items).
+
+## D-031 · Pipeline and results (M3)
+- Stages run as one job on a serial `asr` lane (transcription saturates the CPU).
+  By default they are the project's enabled functions (Transcribe,
+  Compare to Text). Each run is an `analysis_run` row (running, done, failed or
+  cancelled); the latest completed Compare to Text run is the one shown.
+- Transcripts are cached in `cache/transcripts/<sha256>.<settings>.json`, and the
+  10 ms energy envelope used for boundary snapping in `cache/envelope/`. Both
+  are regenerable.
+- Re-mapping manuscript pages replaces units, so their readings cascade away and
+  unaligned segments are cleared. `project_meta.units_version` increments on
+  every rewrite, and each run records the version it compared against. A run
+  against an older version is reported `stale`, and the UI asks for a re-run
+  instead of showing empty results. Re-running is quick because transcripts are
+  cached. (Timestamps were too coarse: a run and a re-map can share a second.)
+- Model sizes shown before the first download: tiny.en 75 MB, base.en 141 MB,
+  small.en 464 MB, medium.en 1.5 GB, large-v3-turbo 1.6 GB (measured).
+
+## D-032 · Testing speech without a model (M3)
+- `tests/fakeasr.py` builds a transcript from the fixture ground truth: heard
+  words spread over each event's true span, optionally with seeded noise
+  (random wrong words, dropped stutters). Alignment tests are exact with perfect
+  ASR. With 5-20% noise, at least 95-99% of sentences are found and every
+  injected text error is detected in all 20 seeds.
+- The browser e2e engine (`tests/e2e_app.py`) injects that fake, so CI never
+  downloads a model.
+- `tests/test_real_model.py` (opt-in, `HILLAUDIO_MODEL_TESTS=1`) runs small.en
+  through the API pipeline. It passed on 2026-10-20: exactly the injected
+  misread and skip flagged, both stutters found, the commentary unaligned.
+- `scripts/bench_asr.py` compares models (ASR quality and Compare to Text
+  precision/recall); see docs/bench/.

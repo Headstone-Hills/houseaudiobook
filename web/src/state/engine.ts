@@ -129,6 +129,51 @@ export interface ManuscriptPreview {
   sentences: ManuscriptUnit[];
 }
 
+export interface AsrInfo {
+  installed: boolean;
+  models: { name: string; size_mb: number }[];
+  default: { model: string };
+}
+
+export type DiffKind = "missing" | "extra" | "substitution" | "transposition" | "reordered" | "mispronunciation";
+
+export interface ReadingDiff {
+  kind: DiffKind;
+  expected: string;
+  heard: string;
+  start: number | null;
+  end: number | null;
+}
+
+export interface SentenceReading {
+  source_id: number;
+  source_label: string;
+  start: number;
+  end: number;
+  coverage: number;
+  score: number;
+  heard: string;
+  diffs: ReadingDiff[];
+}
+
+export interface SentenceComparison {
+  unit_id: number;
+  ordinal: number;
+  text: string;
+  page_label: string;
+  page_end_label: string;
+  readings: SentenceReading[];
+  best_score: number | null;
+}
+
+export interface Comparison {
+  run_id: number;
+  /** The manuscript was re-mapped after this run: results are out of date. */
+  stale: boolean;
+  sentences: SentenceComparison[];
+  unaligned: { source_file_id: number; source_label: string; start: number; end: number; text: string }[];
+}
+
 /** Where a manuscript comes from: a local path, an upload, or the project's copy. */
 export type ManuscriptSource = { path: string } | { upload_id: string } | { current: true };
 
@@ -204,6 +249,10 @@ export const api = {
     request<{ job_id: string }>("POST", "/api/project/manuscript", { source, settings }),
   remapManuscript: (settings: Partial<PageSettings>) =>
     request<{ job_id: string }>("PUT", "/api/project/manuscript/settings", { settings }),
+  asrInfo: () => request<AsrInfo>("GET", "/api/asr"),
+  runAnalysis: (stages: string[] | null, model: string) =>
+    request<{ job_id: string }>("POST", "/api/project/analysis", { stages, asr: { model } }),
+  comparison: () => request<Comparison | null>("GET", "/api/project/comparison"),
   manuscriptUnits: (kind: ManuscriptUnit["kind"], offset: number, limit: number) =>
     request<{ total: number; offset: number; units: ManuscriptUnit[] }>(
       "GET",

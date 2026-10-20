@@ -11,7 +11,7 @@ from hillaudio import pipeline
 from hillaudio.api.jobs import JobContext
 from hillaudio.api.state import EngineState, engine
 from hillaudio.asr import whisper
-from hillaudio.asr.base import MODELS, AsrSettings
+from hillaudio.asr.base import MODEL_SIZES_MB, AsrSettings
 
 router = APIRouter()
 State = Annotated[EngineState, Depends(engine)]
@@ -27,7 +27,7 @@ class AnalysisRequest(BaseModel):
 def asr_info() -> dict[str, Any]:
     return {
         "installed": whisper.installed(),
-        "models": list(MODELS),
+        "models": [{"name": m, "size_mb": mb} for m, mb in MODEL_SIZES_MB.items()],
         "default": AsrSettings().to_json(),
     }
 

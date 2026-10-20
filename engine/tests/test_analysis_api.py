@@ -158,7 +158,8 @@ def test_bad_requests(client: TestClient) -> None:
     assert client.get("/api/project/comparison").json() is None  # nothing run yet
     assert client.get("/api/project/sources/99/transcript").status_code == 404
     info = client.get("/api/asr").json()
-    assert info["default"]["model"] == "small.en" and "small.en" in info["models"]
+    assert info["default"]["model"] == "small.en"
+    assert {"name": "small.en", "size_mb": 464} in info["models"]
 
 
 def test_stages_follow_the_project_functions(client: TestClient, tmp_path: Path) -> None:
@@ -183,9 +184,11 @@ def test_remapping_pages_clears_stale_comparison(client: TestClient, factory: Fa
         client.put("/api/project/manuscript/settings", json={"settings": {"mode": "estimate"}}),
     )
     cmp = client.get("/api/project/comparison").json()
+    assert cmp["stale"] is True
     assert all(s["readings"] == [] for s in cmp["sentences"]) and cmp["unaligned"] == []
     wait(client, client.post("/api/project/analysis", json={}))
     cmp = client.get("/api/project/comparison").json()
+    assert cmp["stale"] is False
     assert by_ordinal(cmp)[4]["page_label"] == "approx. 1"
     assert all(s["readings"] for s in cmp["sentences"])
     assert len(factory.calls) == 3  # transcripts reused

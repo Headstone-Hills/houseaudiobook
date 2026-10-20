@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ImportPanel } from "../components/ImportPanel";
 import { JobsPanel } from "../components/JobsPanel";
+import { ComparisonPanel } from "../components/ComparisonPanel";
 import { ManuscriptPanel } from "../components/ManuscriptPanel";
 import { SourceTable } from "../components/SourceTable";
 import { Waveform } from "../components/Waveform";
@@ -29,6 +30,14 @@ export function ProjectPage({ project, jobs, peakSettings, pageDefaults, onChang
 
   const selected = project.sources.find((s) => s.id === selectedId) ?? project.sources[0];
   const manuscriptRevision = jobs.filter((j) => j.kind === "manuscript" && j.status === "done").length;
+  const analysisRevision = jobs.filter((j) => j.kind === "analysis" && j.status === "done").length;
+  const analysisBlocker = !project.sources.length
+    ? "Import audio first."
+    : !project.manuscript
+      ? "Import the manuscript first."
+      : !project.functions.includes("transcribe")
+        ? "Transcribe is turned off for this project."
+        : null;
 
   return (
     <main>
@@ -76,6 +85,13 @@ export function ProjectPage({ project, jobs, peakSettings, pageDefaults, onChang
         info={project.manuscript}
         defaults={pageDefaults}
         revision={manuscriptRevision}
+        onError={addError}
+      />
+
+      <ComparisonPanel
+        canRun={analysisBlocker === null}
+        why={analysisBlocker}
+        revision={analysisRevision + manuscriptRevision}
         onError={addError}
       />
     </main>

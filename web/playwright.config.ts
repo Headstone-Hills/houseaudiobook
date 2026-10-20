@@ -21,10 +21,12 @@ export default defineConfig({
   },
   webServer: [
     {
-      // The real engine, without auto-reload.
-      command: "../engine/.venv/bin/python -m uvicorn hillaudio.api.app:create_app --factory --host 127.0.0.1 --port 8765",
+      // The real engine, without auto-reload, with a ground-truth fake for speech
+      // recognition (engine/tests/e2e_app.py): no 464 MB model download in CI.
+      command:
+        "../engine/.venv/bin/python -m uvicorn e2e_app:create --factory --app-dir tests --host 127.0.0.1 --port 8765",
       cwd: "../engine",
-      env: { HILLAUDIO_HOME: join(runDir, "home") },
+      env: { HILLAUDIO_HOME: join(runDir, "home"), PYTHONPATH: "../scripts" },
       url: "http://127.0.0.1:8765/api/health",
       reuseExistingServer: false,
     },
