@@ -25,7 +25,31 @@ Deferred / caveats:
 - No source-import hash test yet (nothing imports sources until M1). The
   session-wide fixture guard is in place now; M1 adds a per-import test.
 
-## M1 · Project + ingest: not started
+## M1 · Project + ingest: in progress
+
+Plan:
+- **Files.**
+  - `engine/hillaudio/store/`: SQLite schema with migrations, plus `Project` create/open and the folder layout.
+  - `ingest/`: hashing, ffprobe probe, streaming ffmpeg decode, import (copy or reference), verify and relink.
+  - `analysis/peaks.py`: a pure, streaming multi-resolution peak builder.
+  - `api/`: project/source/peaks endpoints, a job runner with WebSocket progress, and a localhost origin guard.
+  - `web/`: Projects screen (recent, new, open), project screen (source table, import by picker, drag-and-drop or path, job progress, waveform).
+- **Tests.**
+  - Hashing.
+  - ffprobe parsing, both canned JSON and real WAV/MP3.
+  - Peaks: chunking doesn't change results, and levels stay consistent.
+  - Project create/open/reopen.
+  - Import modes, duplicates, rejecting unsupported formats, the mixed-sample-rate warning.
+  - Verifying on open: missing, modified, relink.
+  - **Source immutability:** bytes and mtime unchanged after a full workflow.
+  - Jobs: progress and cancel.
+  - API integration including upload and WebSocket.
+  - Web: function-dependency logic, screens, peak drawing math.
+- **Risks.**
+  - Peak cache size on 10 h projects (int16 peaks, 512-sample base).
+  - Exact MP3 duration (taken from the decoded frame count, not ffprobe).
+  - A browser can't see file paths, so drag-and-drop has to upload.
+  - Any web page can send requests to the localhost API, so the origin guard matters.
 
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.

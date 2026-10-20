@@ -1,0 +1,78 @@
+"""SQLite schema, applied as ordered migrations tracked by PRAGMA user_version.
+
+Tables arrive with the milestone that first needs them (SPEC §4 lists the full
+set). Migrations are append-only: never edit one that has shipped.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+
+MIGRATIONS: list[str] = [
+    # 1: project metadata, sources, and the operation log (M1)
+    """
+    CREATE TABLE project_meta (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+
+    CREATE TABLE source_file (
+        id            INTEGER PRIMARY KEY,
+        -- 'copy': stored under sources/ (path is project-relative).
+        -- 'reference': left where it is (path is absolute).
+        mode          TEXT NOT NULL CHECK (mode IN ('copy', 'reference')),
+        path          TEXT NOT NULL,
+        original_path TEXT NOT NULL,
+        original_name TEXT NOT NULL,
+        sha256        TEXT NOT NULL UNIQUE,
+        size_bytes    INTEGER NOT NULL,
+        format        TEXT NOT NULL,
+        codec         TEXT NOT NULL,
+        lossless      INTEGER NOT NULL,
+        sample_rate   INTEGER NOT NULL,
+        channels      INTEGER NOT NULL,
+        bit_depth     INTEGER,
+        bit_rate      INTEGER,
+        num_frames    INTEGER NOT NULL,  -- exact, from decoding
+        duration      REAL NOT NULL,     -- num_frames / sample_rate
+        label         TEXT NOT NULL,
+        order_index   INTEGER NOT NULL,
+        imported_at   TEXT NOT NULL
+    );
+
+    CREATE TABLE operation_log (
+        id           INTEGER PRIMARY KEY,
+        seq          INTEGER NOT NULL UNIQUE,
+        op_type      TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        origin       TEXT NOT NULL CHECK (origin IN ('auto', 'user')),
+        created_at   TEXT NOT NULL,
+        reverted_at  TEXT
+    );
+    """,
+]
+
+SCHEMA_VERSION = len(MIGRATIONS)
+
+
+def connect(path: str) -> sqlite3.Connection:
+    conn = sqlite3.connect(path, timeout=10.0)
+    conn.row_factory = sqlite3.Row
+    # WAL: background jobs write while the API reads; survives crashes (SPEC §7).
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def migrate(conn: sqlite3.Connection) -> None:
+    current = conn.execute("PRAGMA user_version").fetchone()[0]
+    if current > SCHEMA_VERSION:
+        raise RuntimeError(
+            f"project schema v{current} is newer than this app (v{SCHEMA_VERSION}); update the app"
+        )
+    for version in range(current, SCHEMA_VERSION):
+        # executescript() doesn't join an open transaction, so wrap each migration
+        # and its version bump in one explicitly: a crash leaves either all or none.
+        conn.executescript(
+            f"BEGIN;\n{MIGRATIONS[version]}\nPRAGMA user_version = {version + 1};\nCOMMIT;"
+        )
