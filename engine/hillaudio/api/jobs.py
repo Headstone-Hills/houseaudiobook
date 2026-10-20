@@ -1,9 +1,13 @@
 """Cancellable background jobs with progress (CLAUDE.md: long work never blocks the UI).
 
-Jobs run on a small thread pool. Engine functions receive plain `progress` and
-`check_cancel` callables (see hillaudio.progress), so they don't depend on this
-module. Clients watch jobs over the WebSocket in api/app.py, which sends a
-snapshot whenever `version` changes.
+Jobs run on a small thread pool, or in a named serial *lane* when order matters:
+jobs in one lane run one at a time, first submitted first (imports use this, so
+sources are numbered in the order the user chose them).
+
+Engine functions receive plain `progress` and `check_cancel` callables (see
+hillaudio.progress), so they don't depend on this module. Clients watch jobs
+over the WebSocket in api/app.py, which sends a snapshot whenever `version`
+changes.
 """
 
 from __future__ import annotations
@@ -67,16 +71,24 @@ JobFn = Callable[[JobContext], Any]
 class JobManager:
     def __init__(self, workers: int = 2) -> None:
         self._pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="job")
+        self._lanes: dict[str, ThreadPoolExecutor] = {}
         self._lock = threading.Lock()
         self._jobs: dict[str, Job] = {}
         self.version = 0  # bumped on every change; cheap change detection for WebSockets
 
-    def submit(self, kind: str, label: str, fn: JobFn) -> Job:
+    def submit(self, kind: str, label: str, fn: JobFn, lane: str | None = None) -> Job:
         job = Job(id=uuid.uuid4().hex[:12], kind=kind, label=label)
         with self._lock:
             self._jobs[job.id] = job
             self.version += 1
-        self._pool.submit(self._run, job, fn)
+            if lane is None:
+                executor = self._pool
+            else:
+                # One worker = strict FIFO within the lane.
+                executor = self._lanes.setdefault(
+                    lane, ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"lane-{lane}")
+                )
+            executor.submit(self._run, job, fn)
         return job
 
     def _run(self, job: Job, fn: JobFn) -> None:
@@ -141,4 +153,5 @@ class JobManager:
     def shutdown(self) -> None:
         for j in self.all():
             j._cancel.set()
-        self._pool.shutdown(wait=True)
+        for executor in [self._pool, *self._lanes.values()]:
+            executor.shutdown(wait=True)

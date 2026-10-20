@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocket
 from pydantic import BaseModel, Field
 
 from hillaudio import __version__, functions, settings
-from hillaudio.analysis.peaks import LEVELS, Peaks
+from hillaudio.analysis.peaks import BASE, FACTOR, LEVELS, Peaks
 from hillaudio.api.guard import DEFAULT_HOSTS, LocalOnlyGuard, allowed_origins
 from hillaudio.api.jobs import JobContext, JobManager
 from hillaudio.ingest import peaks_cache, verify
@@ -57,6 +57,7 @@ class EngineState:
         self.project: Project | None = None
         self.status: dict[int, str] = {}  # source id -> ok | missing | modified | checking
         self.warnings: list[str] = []
+        self.ws_clients = 0  # open job WebSockets (tests check handlers exit)
 
     def require_project(self) -> Project:
         if self.project is None:
@@ -152,7 +153,7 @@ def create_app(
             return {"files": results}
 
         label = paths[0][1] or paths[0][0].name if len(paths) == 1 else f"{len(paths)} files"
-        return state.jobs.submit("import", f"Importing {label}", run).id
+        return state.jobs.submit("import", f"Importing {label}", run, lane="import").id
 
     def load_peaks(p: Project, source_id: int) -> tuple[Any, Peaks]:
         try:
@@ -184,6 +185,8 @@ def create_app(
         return {
             "default_location": str(settings.default_location()),
             "recent": [asdict(r) for r in settings.load_recent()],
+            # The UI picks a peak level for its zoom from these, rather than hard-coding them.
+            "peaks": {"base": BASE, "factor": FACTOR, "levels": LEVELS},
         }
 
     @app.post("/api/projects")
@@ -290,14 +293,31 @@ def create_app(
     @app.websocket("/api/jobs/ws")
     async def jobs_ws(ws: WebSocket) -> None:
         await ws.accept()
-        seen = -1
-        with contextlib.suppress(WebSocketDisconnect):
+        state.ws_clients += 1
+
+        async def pump() -> None:
+            seen = -1
             while True:
                 version, jobs = state.jobs.snapshot()
                 if version != seen:
                     await ws.send_json({"type": "jobs", "jobs": jobs})
                     seen = version
                 await asyncio.sleep(WS_POLL_S)
+
+        # The pump only sends when jobs change, so on its own it would never notice
+        # a client that left (regression: handlers leaked and blocked shutdown).
+        # Waiting on receive() returns as soon as the client or server closes.
+        pump_task = asyncio.create_task(pump())
+        try:
+            while (await ws.receive())["type"] != "websocket.disconnect":
+                pass
+        except (WebSocketDisconnect, RuntimeError):
+            pass
+        finally:
+            pump_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect, RuntimeError):
+                await pump_task
+            state.ws_clients -= 1
 
     app.add_middleware(
         LocalOnlyGuard,

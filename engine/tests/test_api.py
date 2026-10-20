@@ -99,7 +99,9 @@ def test_create_open_and_recent(client: TestClient, location: Path) -> None:
         client.post("/api/projects", json={"location": str(location), "name": "Book"}).status_code
         == 400
     )
-    recent = client.get("/api/settings").json()["recent"]
+    s = client.get("/api/settings").json()
+    assert s["peaks"] == {"base": BASE, "factor": 4, "levels": LEVELS}
+    recent = s["recent"]
     assert [r["name"] for r in recent] == ["Book"]
 
     assert client.post("/api/project/close").json() == {"closed": True}

@@ -20,6 +20,7 @@ make dev        # engine (127.0.0.1:8765) + web (http://127.0.0.1:5173)
 make test       # engine tests + web tests
 make check      # ruff, mypy, tsc --noEmit, eslint, tests
 make fixtures   # regenerate synthetic test audio + ground truth
+make e2e        # browser end-to-end tests (Playwright; set CHROMIUM_PATH to reuse a local Chromium)
 ```
 
 ## Test fixtures

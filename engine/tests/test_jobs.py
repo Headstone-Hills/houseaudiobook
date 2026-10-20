@@ -55,3 +55,26 @@ def test_version_changes_on_updates(jobs: JobManager) -> None:
     assert v1 > v0 and snap[0]["status"] == "done"
     jobs.clear_finished()
     assert jobs.snapshot()[1] == []
+
+
+def test_lane_runs_jobs_one_at_a_time_in_order(jobs: JobManager) -> None:
+    """Regression: parallel imports numbered sources in finish order, not pick order."""
+    log: list[str] = []
+    first_may_finish = threading.Event()
+
+    def slow(ctx: JobContext) -> None:
+        log.append("a-start")
+        first_may_finish.wait(2)
+        log.append("a-end")
+
+    def fast(ctx: JobContext) -> None:
+        log.append("b")
+
+    a = jobs.submit("t", "a", slow, lane="import")
+    b = jobs.submit("t", "b", fast, lane="import")
+    threading.Event().wait(0.1)  # b would have run by now if it weren't queued behind a
+    assert log == ["a-start"] and jobs.get(b.id).status == "queued"
+    first_may_finish.set()
+    jobs.wait(a.id)
+    jobs.wait(b.id)
+    assert log == ["a-start", "a-end", "b"]

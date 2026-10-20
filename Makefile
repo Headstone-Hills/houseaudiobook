@@ -5,7 +5,7 @@ VENV   := engine/.venv
 PY     := $(VENV)/bin/python
 NPM    ?= npm
 
-.PHONY: setup dev test test-engine test-web check lint typecheck fixtures clean
+.PHONY: setup dev test test-engine test-web check lint typecheck fixtures e2e clean
 
 setup: $(VENV)/.installed web/node_modules/.installed
 	@command -v ffmpeg >/dev/null || { echo "error: ffmpeg not found (brew install ffmpeg / apt install ffmpeg)"; exit 1; }
@@ -48,6 +48,11 @@ typecheck: $(VENV)/.installed web/node_modules/.installed
 
 check: lint typecheck test
 	@echo "check ok"
+
+# Browser end-to-end tests against the real engine (not part of `check`: slower,
+# needs Chromium). Set CHROMIUM_PATH to use a preinstalled browser.
+e2e: setup
+	cd web && $(NPM) run e2e
 
 fixtures: $(VENV)/.installed
 	$(PY) scripts/make_fixtures.py

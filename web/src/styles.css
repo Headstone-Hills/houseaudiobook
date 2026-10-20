@@ -1,0 +1,61 @@
+/* Plain CSS with system colors; rem units so the UI scales with the browser's
+   text size (SPEC §7: resizable, sensible contrast). */
+:root {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #5a5a5a;
+  --border: #c8c8c8;
+  --accent: #1d4ed8;
+  --wave: #1d4ed8;
+  --warn-bg: #fff7d6;
+  --warn-fg: #6b4d00;
+  --err-fg: #a40000;
+  --selected: #e3ebff;
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.45;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161616;
+    --fg: #eeeeee;
+    --muted: #a8a8a8;
+    --border: #444444;
+    --accent: #8fb0ff;
+    --wave: #8fb0ff;
+    --warn-bg: #3a3000;
+    --warn-fg: #ffe28a;
+    --err-fg: #ff9a9a;
+    --selected: #24324f;
+  }
+}
+body { margin: 0; background: var(--bg); color: var(--fg); }
+main { max-width: 80rem; margin: 0 auto; padding: 1.5rem; }
+h1 { font-size: 1.6rem; margin: 0 0 0.5rem; }
+h2 { font-size: 1.15rem; margin: 1.5rem 0 0.5rem; }
+section { margin-bottom: 1rem; }
+label { display: block; margin: 0.5rem 0 0.2rem; }
+input:not([type]), input[type="text"], textarea { width: 100%; max-width: 40rem; font: inherit; padding: 0.3rem; box-sizing: border-box; }
+button { font: inherit; padding: 0.3rem 0.8rem; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+fieldset { border: 1px solid var(--border); margin: 0.75rem 0; max-width: 40rem; }
+label.function, fieldset label { display: block; margin: 0.25rem 0; }
+.muted { color: var(--muted); }
+.error { color: var(--err-fg); }
+.warning { background: var(--warn-bg); color: var(--warn-fg); padding: 0.3rem 0.5rem; }
+.notices { list-style: none; padding: 0; }
+.recent { list-style: none; padding: 0; }
+.project-header { display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
+.dropzone { border: 2px dashed var(--border); padding: 1rem; max-width: 40rem; }
+.dropzone.dragging { border-color: var(--accent); }
+table.sources { border-collapse: collapse; width: 100%; }
+table.sources th, table.sources td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+table.sources tbody tr { cursor: default; }
+table.sources tr.selected { background: var(--selected); }
+.status-missing, .status-modified { color: var(--err-fg); font-weight: 600; }
+.relink { font-weight: normal; }
+.jobs ul { list-style: none; padding: 0; }
+.job { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+.job progress { width: 12rem; }
+.waveform { margin: 1rem 0; }
+.waveform canvas { width: 100%; height: 7.5rem; border: 1px solid var(--border); }

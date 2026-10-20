@@ -25,31 +25,33 @@ Deferred / caveats:
 - No source-import hash test yet (nothing imports sources until M1). The
   session-wide fixture guard is in place now; M1 adds a per-import test.
 
-## M1 · Project + ingest: in progress
+## M1 · Project + ingest: done (2026-10-20)
 
-Plan:
-- **Files.**
-  - `engine/hillaudio/store/`: SQLite schema with migrations, plus `Project` create/open and the folder layout.
-  - `ingest/`: hashing, ffprobe probe, streaming ffmpeg decode, import (copy or reference), verify and relink.
-  - `analysis/peaks.py`: a pure, streaming multi-resolution peak builder.
-  - `api/`: project/source/peaks endpoints, a job runner with WebSocket progress, and a localhost origin guard.
-  - `web/`: Projects screen (recent, new, open), project screen (source table, import by picker, drag-and-drop or path, job progress, waveform).
-- **Tests.**
-  - Hashing.
-  - ffprobe parsing, both canned JSON and real WAV/MP3.
-  - Peaks: chunking doesn't change results, and levels stay consistent.
-  - Project create/open/reopen.
-  - Import modes, duplicates, rejecting unsupported formats, the mixed-sample-rate warning.
-  - Verifying on open: missing, modified, relink.
-  - **Source immutability:** bytes and mtime unchanged after a full workflow.
-  - Jobs: progress and cancel.
-  - API integration including upload and WebSocket.
-  - Web: function-dependency logic, screens, peak drawing math.
-- **Risks.**
-  - Peak cache size on 10 h projects (int16 peaks, 512-sample base).
-  - Exact MP3 duration (taken from the decoded frame count, not ffprobe).
-  - A browser can't see file paths, so drag-and-drop has to upload.
-  - Any web page can send requests to the localhost API, so the origin guard matters.
+Acceptance criteria (SPEC §9):
+- [x] **Create/open `.hillproj`**: `store/project.py`, API `POST /api/projects`, `/api/projects/open`, Projects screen (recent, open, new with function checkboxes and prerequisite handling). Tests: `test_project.py`, `test_api.py`, `App.test.tsx`.
+- [x] **Import `.mp3`/`.wav`**: copy (default) or reference, by path, file picker or drag-and-drop upload; extension must match content; per-file errors don't stop a batch; duplicates detected by hash; mixed-sample-rate warning. Tests: `test_import.py`, `test_probe.py`, `test_api.py`.
+- [x] **Hash, probe, peaks**: streaming SHA-256; ffprobe metadata; exact length from decoding; multi-resolution peaks cached by hash + settings, regenerated if the cache is cleared. Tests: `test_peaks.py` (block size doesn't change results), `test_api.py` (paging, regeneration).
+- [x] **Sources immutable**: `test_source_immutability.py` runs every M1 workflow through the API (copy, reference, duplicate, upload, peaks, cache rebuild, reopen-and-verify, relink) and proves each original's bytes, size, mode and mtime are unchanged. It was checked by planting an `os.utime` in the importer; the test failed as it should. Copies are read-only. Verify-on-open detects missing and modified files; relink needs identical content; damaged copies are kept, not deleted.
+- [x] Background jobs with progress and cancel over WebSocket (`test_jobs.py`, `test_server.py` on real uvicorn); cancelling an import rolls back cleanly.
+- [x] End-to-end: `make e2e` (Playwright, real engine + browser), plus a manual run with screenshots.
+
+`make check`: ruff, ruff format, mypy --strict, tsc, ESLint, 80 engine tests, 13 web tests. `make e2e`: 1 test.
+
+Bugs found and fixed, each with a regression test (D-016): no WebSocket support on the real server; import order following finish order; leaked WebSocket handlers blocking shutdown and reload.
+
+Deferred:
+- Playback proxies, until M4 (jump-to-audio) needs playback.
+- Renaming and reordering sources, part of Organize and Label (§6.3 step 2).
+- Per-channel waveform display.
+- Zoomable waveform, in M7.
+- Recent-project removal UI.
+
+Risks:
+- Peak paging relies on JSON. A 10-hour hi-res overview is about 2–3 requests, which is fine. The zoomable timeline (M7) may want a binary format.
+- The upload path stores a temporary copy before importing, so disk use temporarily doubles for that file. Import by path avoids it.
+- Hash verification on open reads every source (≈2 GB for a 10 h project). It runs in the background and doesn't block the UI, but it costs disk I/O. A size+mtime fast path could be added if this proves slow (SPEC says "hash-verified on every open", so not changed yet).
+
+## M2 · Text import & page mapping: not started
 
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.

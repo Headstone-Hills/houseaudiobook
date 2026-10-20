@@ -33,3 +33,7 @@ models/
 shell/target/
 
 .DS_Store
+
+# Playwright output
+web/test-results/
+web/playwright-report/
