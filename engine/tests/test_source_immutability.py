@@ -169,3 +169,45 @@ def test_m2_manuscript_workflows_leave_originals_untouched(
     client.post("/api/project/close")
 
     assert {p: fingerprint(p) for p in originals} == before
+
+
+def test_m3_analysis_leaves_sources_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Transcribe + Compare to Text (and the energy envelope it decodes) only read."""
+    from fakeasr import FakeTranscriber
+
+    monkeypatch.setenv("HILLAUDIO_HOME", str(tmp_path / "home"))
+    names = ["ch01_take1.wav", "ch01_take2.wav", "ch02_take1.wav"]
+    originals = [FIXTURES / n for n in names] + [FIXTURES / "manuscript.txt"]
+    before = {p: fingerprint(p) for p in originals}
+    app = create_app(hosts=DEFAULT_HOSTS | {"testserver"}, transcriber_factory=FakeTranscriber)
+    with TestClient(app) as c:
+        loc = tmp_path / "projects"
+        loc.mkdir()
+        c.post("/api/projects", json={"location": str(loc), "name": "Analysis"})
+        wait(
+            c,
+            c.post(
+                "/api/project/sources/import",
+                json={"paths": [str(FIXTURES / names[0])], "mode": "reference"},
+            ),
+        )
+        wait(
+            c,
+            c.post(
+                "/api/project/sources/import",
+                json={"paths": [str(FIXTURES / n) for n in names[1:]]},
+            ),
+        )
+        wait(
+            c,
+            c.post(
+                "/api/project/manuscript",
+                json={"source": {"path": str(FIXTURES / "manuscript.txt")}},
+            ),
+        )
+        wait(c, c.post("/api/project/analysis", json={}))
+        wait(c, c.post("/api/project/analysis", json={"stages": ["compare_text"]}))
+        assert c.get("/api/project/comparison").json()["sentences"]
+    assert {p: fingerprint(p) for p in originals} == before

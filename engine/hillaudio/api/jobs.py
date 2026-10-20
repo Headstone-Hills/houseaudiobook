@@ -20,12 +20,14 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from hillaudio.progress import Cancelled
+
 Status = Literal["queued", "running", "done", "failed", "cancelled"]
 TERMINAL: frozenset[str] = frozenset({"done", "failed", "cancelled"})
 
 
-class JobCancelled(Exception):
-    pass
+# Kept as the job runner's name for it; engine code raises and catches Cancelled.
+JobCancelled = Cancelled
 
 
 @dataclass

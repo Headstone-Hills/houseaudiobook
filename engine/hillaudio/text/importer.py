@@ -168,6 +168,10 @@ def _store(project: Project, path: Path, digest: str, name: str) -> str:
 
 
 def _write_units(project: Project, a: Analysis, settings: PageSettings, conn: Any) -> None:
+    # Comparison results refer to these units: readings go with them (ON DELETE
+    # CASCADE), and unaligned speech is only "unaligned" against this manuscript.
+    # Transcripts stay cached, so re-running Compare to Text is quick.
+    conn.execute("DELETE FROM unaligned_segment")
     conn.execute("DELETE FROM manuscript_unit")
     ids: list[int] = []
     for u in a.units:

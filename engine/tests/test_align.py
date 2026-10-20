@@ -8,26 +8,17 @@ alignment must still find every sentence and every injected text error.
 
 from __future__ import annotations
 
-import json
-import random
 from typing import Any
 
+import fakeasr
 import pytest
 from conftest import FIXTURES
+from fakeasr import TRUTH
 
-import make_fixtures as mf
 from hillaudio.analysis.compare import Comparison, Sentence, SentenceReading, Word, compare
 from hillaudio.text.extract_txt import extract_text
 from hillaudio.text.pages import PageSettings, build_page_map
 from hillaudio.text.units import build_units
-
-TRUTH: dict[str, Any] = json.loads((FIXTURES / "ground_truth.json").read_text())
-GAP_AFTER = {
-    "stutter": mf.STUTTER_GAP_S,
-    "false_start": mf.RESTART_GAP_S,
-    "commentary": mf.COMMENTARY_GAP_S,
-}
-NOISE_WORDS = ["apple", "river", "quickly", "blue", "seven", "window", "under", "garden", "silver"]
 
 
 def manuscript() -> list[Sentence]:
@@ -44,25 +35,10 @@ SID = {f"s{i:02d}": i for i in range(len(SENTENCES))}  # ground-truth id -> key
 def fake_words(
     file: dict[str, Any], noise: float = 0.0, drop_stutters: bool = False, seed: int = 0
 ) -> list[Word]:
-    rng = random.Random(seed)
-    words: list[Word] = []
-    for e in file["events"]:
-        if not e["heard"] or (drop_stutters and e["type"] == "stutter"):
-            continue
-        heard = e["heard"].split()
-        end = e["end"] - GAP_AFTER.get(e["type"], 0.0)
-        step = (end - e["start"]) / len(heard)
-        protected = {(e.get("detail") or {}).get("heard_word")}
-        for i, w in enumerate(heard):
-            if (
-                noise
-                and e["type"] == "read"
-                and w.strip(".,") not in protected
-                and rng.random() < noise
-            ):
-                w = rng.choice(NOISE_WORDS)  # an ASR error
-            words.append(Word(w, e["start"] + i * step, e["start"] + (i + 1) * step, 0.95))
-    return words
+    return [
+        Word(w.text, w.start, w.end, w.prob)
+        for w in fakeasr.fake_words(file, noise, drop_stutters, seed)
+    ]
 
 
 def run(name: str, **kw: Any) -> Comparison:

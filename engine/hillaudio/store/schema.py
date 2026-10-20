@@ -86,6 +86,60 @@ MIGRATIONS: list[str] = [
         UNIQUE (kind, ordinal)
     );
     """,
+    # 3: analysis runs, transcripts, and Compare to Text results (M3).
+    """
+    CREATE TABLE analysis_run (
+        id           INTEGER PRIMARY KEY,
+        started_at   TEXT NOT NULL,
+        finished_at  TEXT,
+        stages_json  TEXT NOT NULL,
+        options_json TEXT NOT NULL,
+        status       TEXT NOT NULL CHECK (status IN ('running', 'done', 'failed', 'cancelled'))
+    );
+
+    -- The current transcript of each source (also cached in cache/transcripts/).
+    CREATE TABLE transcript_word (
+        id             INTEGER PRIMARY KEY,
+        source_file_id INTEGER NOT NULL REFERENCES source_file(id),
+        idx            INTEGER NOT NULL,
+        text           TEXT NOT NULL,
+        start          REAL NOT NULL,
+        "end"          REAL NOT NULL,
+        confidence     REAL NOT NULL,
+        settings_key   TEXT NOT NULL,
+        UNIQUE (source_file_id, idx)
+    );
+
+    -- One row per reading of a sentence. Re-mapping the manuscript replaces its
+    -- units, so readings of old units go with them (ON DELETE CASCADE).
+    CREATE TABLE alignment (
+        id                 INTEGER PRIMARY KEY,
+        run_id             INTEGER NOT NULL REFERENCES analysis_run(id),
+        manuscript_unit_id INTEGER NOT NULL REFERENCES manuscript_unit(id) ON DELETE CASCADE,
+        source_file_id     INTEGER NOT NULL REFERENCES source_file(id),
+        start              REAL NOT NULL,
+        "end"              REAL NOT NULL,
+        coverage           REAL NOT NULL,
+        match_score        REAL NOT NULL,
+        matches            INTEGER NOT NULL,
+        subs               INTEGER NOT NULL,
+        dels               INTEGER NOT NULL,
+        ins                INTEGER NOT NULL,
+        heard              TEXT NOT NULL,
+        diffs_json         TEXT NOT NULL
+    );
+    CREATE INDEX alignment_unit ON alignment (run_id, manuscript_unit_id);
+
+    -- Speech that matches no sentence: commentary, asides, noise (cleanup, M5).
+    CREATE TABLE unaligned_segment (
+        id             INTEGER PRIMARY KEY,
+        run_id         INTEGER NOT NULL REFERENCES analysis_run(id),
+        source_file_id INTEGER NOT NULL REFERENCES source_file(id),
+        start          REAL NOT NULL,
+        "end"          REAL NOT NULL,
+        text           TEXT NOT NULL
+    );
+    """,
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

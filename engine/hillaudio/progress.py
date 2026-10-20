@@ -9,7 +9,11 @@ from __future__ import annotations
 from collections.abc import Callable
 
 Progress = Callable[[float, str], None]  # (fraction 0..1, message)
-CheckCancel = Callable[[], None]  # raises to abort
+CheckCancel = Callable[[], None]  # raises Cancelled to abort
+
+
+class Cancelled(Exception):
+    """Raised by a CheckCancel callable when the user cancels the work."""
 
 
 def no_progress(_fraction: float, _message: str) -> None:

@@ -3,17 +3,29 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import HTTPException, Request
 
 from hillaudio.api.jobs import JobManager
+from hillaudio.asr.base import AsrSettings, Transcriber
 from hillaudio.store.project import Project
+
+TranscriberFactory = Callable[[AsrSettings], Transcriber]
+
+
+def _whisper(settings: AsrSettings) -> Transcriber:
+    from hillaudio.asr.whisper import WhisperTranscriber
+
+    return WhisperTranscriber(settings)
 
 
 class EngineState:
-    def __init__(self) -> None:
+    def __init__(self, transcriber_factory: TranscriberFactory = _whisper) -> None:
         self.jobs = JobManager()
+        # Tests inject a fake; the app uses faster-whisper (D-028).
+        self.transcriber_factory = transcriber_factory
         self.project: Project | None = None
         self.status: dict[int, str] = {}  # source id -> ok | missing | modified | checking
         self.manuscript_status: str | None = None  # ok | modified | missing | checking
