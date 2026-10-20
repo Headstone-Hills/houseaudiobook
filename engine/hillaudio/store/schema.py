@@ -50,6 +50,42 @@ MIGRATIONS: list[str] = [
         reverted_at  TEXT
     );
     """,
+    # 2: the manuscript and its units (M2). One manuscript per project (D-023).
+    """
+    CREATE TABLE manuscript (
+        id            INTEGER PRIMARY KEY CHECK (id = 1),
+        original_path TEXT NOT NULL,
+        original_name TEXT NOT NULL,
+        stored_path   TEXT NOT NULL,     -- read-only copy, project-relative, under text/
+        sha256        TEXT NOT NULL,
+        size_bytes    INTEGER NOT NULL,
+        format        TEXT NOT NULL CHECK (format IN ('txt', 'md', 'docx', 'pdf')),
+        settings_json TEXT NOT NULL,     -- PageSettings used for the current mapping
+        page_mode     TEXT NOT NULL,     -- the mode actually used (auto resolved)
+        page_count    INTEGER NOT NULL,
+        warnings_json TEXT NOT NULL,
+        full_text     TEXT NOT NULL,     -- extracted text; unit offsets index into it
+        imported_at   TEXT NOT NULL,
+        mapped_at     TEXT NOT NULL
+    );
+
+    CREATE TABLE manuscript_unit (
+        id             INTEGER PRIMARY KEY,
+        kind           TEXT NOT NULL CHECK (kind IN ('chapter', 'paragraph', 'sentence')),
+        ordinal        INTEGER NOT NULL,
+        parent_id      INTEGER REFERENCES manuscript_unit(id),
+        text           TEXT NOT NULL,
+        char_start     INTEGER NOT NULL,
+        char_end       INTEGER NOT NULL,
+        page           INTEGER,          -- printed number; NULL if not numeric
+        page_label     TEXT NOT NULL,    -- "12", "approx. 12", "iii", "front matter"
+        page_end       INTEGER,
+        page_end_label TEXT NOT NULL,
+        page_estimated INTEGER NOT NULL,
+        front_matter   INTEGER NOT NULL,
+        UNIQUE (kind, ordinal)
+    );
+    """,
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

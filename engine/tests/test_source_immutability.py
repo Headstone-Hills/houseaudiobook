@@ -1,6 +1,7 @@
-"""Non-negotiable (CLAUDE.md): imported source audio is never modified, moved or deleted.
+"""Non-negotiable (CLAUDE.md): imported source audio and manuscripts are never
+modified, moved or deleted.
 
-Runs every M1 workflow that touches sources, through the API, then proves each
+Runs every workflow that touches sources, through the API, then proves each
 original's bytes, size, permissions and modification time are unchanged. Later
 milestones must add their workflows here.
 """
@@ -123,3 +124,48 @@ def test_full_m1_workflow_leaves_sources_untouched(
         stored = Path(proj["path"]) / s["path"] if s["mode"] == "copy" else Path(s["path"])
         assert hashlib.sha256(stored.read_bytes()).hexdigest() == s["sha256"]
         assert s["sha256"] in by_hash
+
+
+def test_m2_manuscript_workflows_leave_originals_untouched(
+    client: TestClient, tmp_path: Path
+) -> None:
+    user_dir = tmp_path / "manuscripts"
+    user_dir.mkdir()
+    originals = [
+        Path(shutil.copy(FIXTURES / "manuscript.docx", user_dir / "book.docx")),
+        FIXTURES / "manuscript.pdf",  # straight from the committed fixtures
+        FIXTURES / "manuscript.txt",
+    ]
+    before = {p: fingerprint(p) for p in originals}
+
+    loc = tmp_path / "projects"
+    loc.mkdir()
+    proj = client.post("/api/projects", json={"location": str(loc), "name": "Text"}).json()
+
+    for path in originals:
+        src = {"path": str(path)}
+        assert (
+            client.post("/api/project/manuscript/preview", json={"source": src}).status_code == 200
+        )
+        wait(client, client.post("/api/project/manuscript", json={"source": src}))
+        wait(
+            client,
+            client.put("/api/project/manuscript/settings", json={"settings": {"mode": "estimate"}}),
+        )
+    up = client.put(
+        "/api/project/manuscript/upload",
+        params={"filename": "up.docx"},
+        content=originals[0].read_bytes(),
+    ).json()
+    wait(
+        client,
+        client.post("/api/project/manuscript", json={"source": {"upload_id": up["upload_id"]}}),
+    )
+    client.post("/api/project/close")
+    client.post("/api/projects/open", json={"path": proj["path"]})
+    for job in client.get("/api/jobs").json():
+        client.app.state.engine.jobs.wait(job["id"])  # type: ignore[attr-defined]
+    assert client.get("/api/project/manuscript").json()["status"] == "ok"
+    client.post("/api/project/close")
+
+    assert {p: fingerprint(p) for p in originals} == before

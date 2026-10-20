@@ -20,13 +20,16 @@ from pydantic import BaseModel, Field
 
 from hillaudio import __version__, functions, settings
 from hillaudio.analysis.peaks import BASE, FACTOR, LEVELS, Peaks
+from hillaudio.api import manuscript
 from hillaudio.api.guard import DEFAULT_HOSTS, LocalOnlyGuard, allowed_origins
-from hillaudio.api.jobs import JobContext, JobManager
+from hillaudio.api.jobs import JobContext
+from hillaudio.api.state import EngineState
 from hillaudio.ingest import peaks_cache, verify
 from hillaudio.ingest.importer import IngestError, build_peaks, import_file
 from hillaudio.ingest.probe import UnsupportedAudio, probe
 from hillaudio.progress import never_cancel, no_progress
 from hillaudio.store.project import Project, ProjectError
+from hillaudio.text import importer as text_importer
 
 MAX_PEAKS_PER_REQUEST = 50_000
 WS_POLL_S = 0.1
@@ -49,20 +52,6 @@ class ImportPaths(BaseModel):
 
 class Relink(BaseModel):
     path: str
-
-
-class EngineState:
-    def __init__(self) -> None:
-        self.jobs = JobManager()
-        self.project: Project | None = None
-        self.status: dict[int, str] = {}  # source id -> ok | missing | modified | checking
-        self.warnings: list[str] = []
-        self.ws_clients = 0  # open job WebSockets (tests check handlers exit)
-
-    def require_project(self) -> Project:
-        if self.project is None:
-            raise HTTPException(409, "no project is open")
-        return self.project
 
 
 def create_app(
@@ -89,26 +78,32 @@ def create_app(
                 s.to_json() | {"status": state.status.get(s.id, "ok")} for s in p.sources()
             ],
             "warnings": state.warnings,
+            "manuscript": manuscript.info(state),
         }
 
     def switch_to(p: Project) -> dict[str, Any]:
         if state.jobs.active():
             raise HTTPException(409, "wait for running jobs to finish or cancel them first")
         state.jobs.clear_finished()
+        state.discard_uploads()
         state.project, state.warnings = p, []
         state.status = {s.id: "checking" for s in p.sources()}
+        has_manuscript = text_importer.manuscript_info(p) is not None
+        state.manuscript_status = "checking" if has_manuscript else None
         settings.remember(p.root, p.name)
-        if state.status:
+        if state.status or has_manuscript:
             start_verify(p)
         return summary(p)
 
     def start_verify(p: Project) -> str:
         def run(ctx: JobContext) -> dict[str, Any]:
             results = verify.verify_all(p, ctx.progress, ctx.check_cancel)
+            text_status = text_importer.verify_copy(p)
             if state.project is p:
                 state.status.update({r.source_id: r.status for r in results})
+                state.manuscript_status = text_status
             problems = [asdict(r) for r in results if r.status != "ok"]
-            return {"checked": len(results), "problems": problems}
+            return {"checked": len(results), "problems": problems, "manuscript": text_status}
 
         return state.jobs.submit("verify", f"Verifying sources of {p.name}", run).id
 
@@ -214,7 +209,9 @@ def create_app(
     def close_project() -> dict[str, bool]:
         if state.jobs.active():
             raise HTTPException(409, "wait for running jobs to finish or cancel them first")
+        state.discard_uploads()
         state.project, state.status, state.warnings = None, {}, []
+        state.manuscript_status = None
         return {"closed": True}
 
     @app.get("/api/project")
@@ -319,6 +316,7 @@ def create_app(
                 await pump_task
             state.ws_clients -= 1
 
+    app.include_router(manuscript.router)
     app.add_middleware(
         LocalOnlyGuard,
         hosts=hosts,
