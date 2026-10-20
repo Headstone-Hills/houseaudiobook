@@ -51,7 +51,29 @@ Risks:
 - The upload path stores a temporary copy before importing, so disk use temporarily doubles for that file. Import by path avoids it.
 - Hash verification on open reads every source (≈2 GB for a 10 h project). It runs in the background and doesn't block the UI, but it costs disk I/O. A size+mtime fast path could be added if this proves slow (SPEC says "hash-verified on every open", so not changed yet).
 
-## M2 · Text import & page mapping: not started
+## M2 · Text import & page mapping: in progress
+
+Plan:
+- **Files.**
+  - `engine/hillaudio/text/`:
+    - `extract_txt.py`, `extract_docx.py` (stdlib zip+XML), `extract_pdf.py` (pypdf). Each turns a document into blocks plus page boundaries.
+    - `pages.py` (pure): page modes (markers, breaks, PDF labels, words-per-page estimate), first-numbered-page offset, front-matter skip.
+    - `units.py` (pure): chapter, paragraph and sentence units with char offsets and start/end pages.
+    - `importer.py`: copy the original read-only into `text/`, extract, store units.
+  - Store: migration 2 adds `manuscript` and `manuscript_unit`.
+  - API: preview, import (path or upload), re-map with new page settings, paged units.
+  - Web: a manuscript panel with a live preview of the page mapping and the settings form, plus a unit browser.
+  - Fixtures: `make fixtures` also writes `manuscript.docx` and `manuscript.pdf` from the same text.
+- **Tests.**
+  - Page edge cases: a marker mid-sentence or mid-paragraph; consecutive or decreasing markers; text before the first marker; form feeds (consecutive, trailing); a docx page break inside a run, `pageBreakBefore`, section breaks; PDF labels (roman/arabic); running heads and page-number lines; hyphenation across lines and pages; scanned or empty PDFs; estimate boundaries; offset and front-matter skip.
+  - Sentence splitting: abbreviations, initials, quotes, ellipses.
+  - Golden: `.txt`, `.docx` and `.pdf` fixtures all yield the ground truth's 13 sentences on the same pages.
+  - Immutability now also covers manuscripts.
+  - API integration and UI tests; e2e extended.
+- **Risks.**
+  - PDF text order and paragraph detection are heuristic.
+  - Re-mapping replaces units, which later milestones reference (stable keys must not depend on unit ids).
+  - Word's own pagination isn't stored in `.docx` reliably. Only explicit breaks are used, otherwise estimate mode.
 
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.
