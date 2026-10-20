@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from hillaudio.analysis import compare as cmp
 from hillaudio.analysis.boundaries import envelope, snap_end, snap_start, speech_mask
 from hillaudio.text.normalize import normalize, tokens_equal
 
@@ -254,6 +255,79 @@ def report(results: list[ModelResult]) -> str:
     return "\n".join(lines)
 
 
+TEXT_ERRORS = ("missing", "substitution", "transposition", "reordered")
+
+
+def report_compare(results: list[ModelResult]) -> str:
+    """Compare to Text on each model's transcripts: flub precision/recall."""
+    from hillaudio.text.extract_txt import extract_text
+    from hillaudio.text.pages import PageSettings, build_page_map
+    from hillaudio.text.units import build_units
+
+    truth = json.loads((FIXTURES / "ground_truth.json").read_text())
+    s = PageSettings()
+    doc = extract_text((FIXTURES / "manuscript.txt").read_bytes(), s)
+    sentences = [
+        cmp.Sentence(u.ordinal, u.text)
+        for u in build_units(doc, build_page_map(doc, s))
+        if u.kind == "sentence"
+    ]
+    injected = {
+        (f["name"], int(e["sentence_id"][1:]))
+        for f in truth["files"]
+        for e in f["events"]
+        if e["type"] in ("misread", "skip")
+    }
+    reads = [
+        (f["name"], int(e["sentence_id"][1:]), e["start"])
+        for f in truth["files"]
+        for e in f["events"]
+        if e["type"] in ("read", "misread", "skip")
+    ]
+    lines = [
+        "| Model | sentences found | flub precision | flub recall | false flags |",
+        "|---|---|---|---|---|",
+    ]
+    for r in results:
+        flagged: set[tuple[str, int]] = set()
+        found = 0
+        details: list[str] = []
+        for fr in r.files:
+            import soundfile as sf
+
+            audio, sr = sf.read(str(FIXTURES / fr.name), dtype="float32")
+            env = envelope(audio, sr)
+            words = [cmp.Word(w.text, w.start, w.end, w.prob) for w in fr.words]
+            c = cmp.compare(sentences, words, speech_mask(env), env.fps)
+            for rd in c.readings:
+                errs = [d for d in rd.diffs if d.kind in TEXT_ERRORS]
+                if rd.complete and errs:
+                    flagged.add((fr.name, rd.sentence_key))
+                    if (fr.name, rd.sentence_key) not in injected:
+                        details += [
+                            f"{fr.name} s{rd.sentence_key:02d}: {d.kind} "
+                            f"{d.expected!r} -> {d.heard!r}"
+                            for d in errs
+                        ]
+            found += sum(
+                any(
+                    rd.sentence_key == sid and rd.coverage >= 0.8 and abs(rd.start - start) < 0.6
+                    for rd in c.readings
+                )
+                for name, sid, start in reads
+                if name == fr.name
+            )
+        tp = len(flagged & injected)
+        precision = tp / len(flagged) if flagged else 1.0
+        lines.append(
+            f"| {r.model} | {found}/{len(reads)} | {precision:.2f} | "
+            f"{tp / len(injected):.2f} | {len(flagged - injected)} |"
+        )
+        if details:
+            print(f"false flags, {r.model}: " + "; ".join(details), file=sys.stderr)
+    return "\n".join(lines)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--models", nargs="+", default=["small.en", "medium.en", "large-v3-turbo"])
@@ -275,6 +349,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             for m, files in raw.items()
         ]
         print(report(loaded))
+        print()
+        print(report_compare(loaded))
         return 0
 
     results: list[ModelResult] = []
@@ -284,6 +360,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.prompt:
             results.append(transcribe(name, args.prompt))
     print(report(results))
+    print()
+    print(report_compare(results))
     if args.dump:
         args.dump.write_text(
             json.dumps(

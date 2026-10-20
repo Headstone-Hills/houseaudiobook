@@ -14,6 +14,7 @@ dependencies = [
     "numpy>=1.26",
     "soundfile>=0.12",
     "pypdf>=6",  # PDF manuscripts (BSD-3-Clause, pure Python)
+    "rapidfuzz>=3",  # fuzzy matching for alignment fallback (MIT)
 ]
 
 [project.optional-dependencies]
