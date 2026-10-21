@@ -70,6 +70,7 @@ def import_file(
     mode: Mode = "copy",
     *,
     original_name: str | None = None,
+    role: Literal["narration", "pickup"] = "narration",
     progress: Progress = no_progress,
     check_cancel: CheckCancel = never_cancel,
 ) -> ImportResult:
@@ -151,8 +152,8 @@ def import_file(
         cur = conn.execute(
             """INSERT INTO source_file (mode, path, original_path, original_name, sha256,
                 size_bytes, format, codec, lossless, sample_rate, channels, bit_depth,
-                bit_rate, num_frames, duration, label, order_index, imported_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                bit_rate, num_frames, duration, label, order_index, imported_at, role)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 mode,
                 stored_rel,
@@ -172,13 +173,14 @@ def import_file(
                 Path(name).stem,
                 order,
                 now_iso(),
+                role,
             ),
         )
         source_id = cur.lastrowid
         project.log(
             conn,
             "import_source",
-            {"source_id": source_id, "sha256": digest, "mode": mode, "name": name},
+            {"source_id": source_id, "sha256": digest, "mode": mode, "name": name, "role": role},
             "user",
         )
     assert source_id is not None

@@ -136,11 +136,14 @@ def groups(
     cut: Mapping[int, Sequence[tuple[float, float]]],
     levels: Mapping[int, Level] | None = None,
     settings: IssueSettings | None = None,
+    pickups: frozenset[int] = frozenset(),
 ) -> list[TakeGroup]:
     """Take groups in manuscript order.
 
     `onsets`: each recording's word start times (for where a take's span ends);
-    `cut`: spans already removed by cleanup (not takes themselves).
+    `cut`: spans already removed by cleanup (not takes themselves); `pickups`:
+    pickup recordings (D-062). A line read once, in a pickup, is a group of one:
+    the take still has to be placed where its line goes.
     """
     s = settings or IssueSettings()
     levels = levels or {}
@@ -169,7 +172,7 @@ def groups(
     out: list[TakeGroup] = []
     for i, sent in enumerate(sentences):
         rs = by_sentence.get(sent.ordinal, [])
-        if len(rs) < 2:
+        if len(rs) < 2 and not (rs and rs[0].source_id in pickups):
             continue
         gkey = _key("take_group", sentence_context(sentences, i))
         seen: dict[int, int] = {}
@@ -204,6 +207,20 @@ def groups(
                 )
             )
         ranked = sorted(takes, key=lambda t: rank_key(t, median_db))
+        if len(ranked) == 1:
+            out.append(
+                TakeGroup(
+                    gkey,
+                    sent.unit_id,
+                    sent.ordinal,
+                    sent.text,
+                    sent.page_label,
+                    ranked,
+                    confident=True,
+                    reasons=["the only take"],
+                )
+            )
+            continue
         best, second = ranked[0], ranked[1]
         kb, ks = rank_key(best, median_db), rank_key(second, median_db)
         out.append(

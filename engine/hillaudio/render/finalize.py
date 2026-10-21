@@ -218,14 +218,17 @@ def _safe(name: str) -> str:
     return "_".join(keep.split())[:60] or "part"
 
 
-def plan(project: Project, split: Split = "single") -> list[OutputPlan]:
+def plan(project: Project, split: Split = "single", chapter: int | None = None) -> list[OutputPlan]:
     """Output files: the whole timeline, or one per chapter (where each chapter's
-    first line plays), or one per marker section."""
+    first line plays), or one per marker section. `chapter`: only that chapter's
+    file (a chapter workspace's export)."""
     st = timeline_store.load(project)
     end = max((c.timeline_end for c in st.clips), default=0)
     if end == 0:
         raise ExportError("the timeline is empty")
-    starts: list[tuple[int, str]] = []
+    if chapter is not None:
+        split = "chapters"
+    starts: list[tuple[int, str, int | None]] = []
     if split == "chapters":
         starts = _chapter_starts(project, st)
         if not starts:
@@ -241,23 +244,35 @@ def plan(project: Project, split: Split = "single") -> list[OutputPlan]:
                 else loc.at_sample(m["source_file_id"], int(m["sample"]))
             )
             if t is not None:
-                starts.append((round(t * st.rate), m["label"]))
+                starts.append((round(t * st.rate), m["label"], None))
         starts.sort()
         if not starts:
             raise ExportError("add markers where each file should start")
     if not starts:
         return [OutputPlan(1, project.name, 0, end)]
     if starts[0][0] > 0:
-        starts[0] = (0, starts[0][1])  # anything before the first chapter joins it
+        starts[0] = (0, *starts[0][1:])  # anything before the first chapter joins it
     out: list[OutputPlan] = []
-    for i, (t0, title) in enumerate(starts):
+    ids: list[int | None] = []
+    for i, (t0, title, cid) in enumerate(starts):
         t1 = starts[i + 1][0] if i + 1 < len(starts) else end
         if t1 > t0:
             out.append(OutputPlan(len(out) + 1, title, t0, t1))
+            ids.append(cid)
+    if chapter is None:
+        return out
+    # Keep the book-wide number, so a chapter's file sorts with the others.
+    out = [p for p, cid in zip(out, ids, strict=True) if cid == chapter]
+    if not out:
+        raise ExportError(
+            "this chapter isn't on the timeline yet (record it, then Compare to Text)"
+        )
     return out
 
 
-def _chapter_starts(project: Project, st: timeline_store.State) -> list[tuple[int, str]]:
+def _chapter_starts(
+    project: Project, st: timeline_store.State
+) -> list[tuple[int, str, int | None]]:
     run = pipeline.latest_run(project)
     if run is None:
         return []
@@ -281,7 +296,7 @@ def _chapter_starts(project: Project, st: timeline_store.State) -> list[tuple[in
             if (t := loc.at(r.source_id, r.start)) is not None
         ]
         if times:
-            out.append((round(min(times) * st.rate), ch["text"]))
+            out.append((round(min(times) * st.rate), ch["text"], ch["id"]))
     out.sort()
     return out
 
@@ -710,13 +725,19 @@ def check(levels: dsp.Levels, info: dict[str, Any], pr: Preset, fmt: str) -> lis
 # -- export ------------------------------------------------------------------------------------
 
 
-def preflight(project: Project, fmt: Format = "mp3", split: Split = "single") -> dict[str, Any]:
+def preflight(
+    project: Project, fmt: Format = "mp3", split: Split = "single", chapter: int | None = None
+) -> dict[str, Any]:
     """What the export dialog shows first (SPEC §6.9): unresolved issues, sources
-    that would make it impossible or unwise, the files it would write."""
-    from hillaudio import issue_store
+    that would make it impossible or unwise, the files it would write.
+    `chapter`: just that chapter's file and issues."""
+    from hillaudio import chapters, issue_store
 
+    in_chapter = chapters.unit_chapters(project) if chapter is not None else {}
     open_issues: dict[str, int] = {}
     for i in issue_store.list_issues(project):
+        if chapter is not None and in_chapter.get(i["manuscript_unit_id"]) != chapter:
+            continue
         if i["status"] == "open":
             open_issues[i["kind"]] = open_issues.get(i["kind"], 0) + 1
     st = timeline_store.load(project)
@@ -734,7 +755,9 @@ def preflight(project: Project, fmt: Format = "mp3", split: Split = "single") ->
         problems.append(f"missing recordings: {', '.join(missing)}; relink them first")
     outputs: list[dict[str, Any]] = []
     try:
-        outputs = [{"title": p.title, "seconds": p.seconds(st.rate)} for p in plan(project, split)]
+        outputs = [
+            {"title": p.title, "seconds": p.seconds(st.rate)} for p in plan(project, split, chapter)
+        ]
     except ExportError as e:
         outputs = []
         problems.append(str(e))
@@ -774,14 +797,15 @@ def export(
     progress: Progress = no_progress,
     check_cancel: CheckCancel = never_cancel,
     analyze_only: bool = False,
+    chapter: int | None = None,
 ) -> dict[str, Any]:
     """Write the finished files (or, analyze_only, just measure what they'd be)."""
-    pf = preflight(project, fmt, split)
+    pf = preflight(project, fmt, split, chapter)
     blocking = [p for p in pf["problems"] if not (analyze_only and "MP3" in p)]
     if blocking:
         raise ExportError(blocking[0])
     job = prepare(project, progress, check_cancel)
-    plans = plan(project, split)
+    plans = plan(project, split, chapter)
     kbps = kbps or job.preset.mp3_min_kbps
     if fmt == "mp3" and kbps < 32:
         raise ExportError("choose an MP3 bitrate")
@@ -817,7 +841,7 @@ def export(
             else:
                 name = (
                     f"{p.index:02d}_{_safe(p.title)}.{ext}"
-                    if len(plans) > 1
+                    if len(plans) > 1 or chapter is not None
                     else f"{_safe(project.name)}.{ext}"
                 )
                 path = out_dir / name

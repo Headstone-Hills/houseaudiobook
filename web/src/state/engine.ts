@@ -54,6 +54,8 @@ export interface Source {
   label: string;
   order_index: number;
   imported_at: string;
+  /** A pickup holds re-recorded lines: only the takes placed from it play (D-062). */
+  role?: "narration" | "pickup";
   status: SourceStatus;
 }
 
@@ -168,6 +170,67 @@ export interface SentenceComparison {
   page_end_label: string;
   readings: SentenceReading[];
   best_score: number | null;
+  /** false: no recording reaches this text yet (D-059), so it isn't "not read". */
+  recorded?: boolean;
+}
+
+export type ChapterStatus = "not_compared" | "not_recorded" | "partial" | "recorded";
+
+/** A chapter workspace (D-059): what the recordings cover of it, and where it is. */
+export interface Chapter {
+  id: number; // the chapter heading's unit id; -1 for the pages before chapter one
+  number: number; // 0 for those opening pages
+  title: string;
+  page_label: string;
+  status: ChapterStatus;
+  sentences: number;
+  read: number;
+  not_recorded: number;
+  sentence_ids: number[];
+  spans: { source_id: number; start: number; end: number }[]; // seconds in each recording
+  timeline: { start: number; end: number } | null; // seconds on the timeline
+  open_issues: number;
+}
+
+/** A line read in full that the edit no longer plays, or plays only in part (D-061). */
+export interface LostLine {
+  unit_id: number;
+  ordinal: number;
+  page_label: string;
+  text: string;
+  status: "removed" | "clipped";
+  source_id: number;
+  start: number; // the reading checked, in its recording
+  end: number;
+  missing: string[];
+  removals: { id: number | null; kind: string; start: number; end: number }[];
+}
+
+export interface EditCheck {
+  run_id: number | null;
+  stale: boolean;
+  checked: number;
+  lines: LostLine[];
+}
+
+/** What one pickup recording did (D-062). */
+export interface PickupReport {
+  source_id: number;
+  label: string;
+  duration: number;
+  checked: boolean; // transcribed and compared yet
+  lines: {
+    take_id: number;
+    group_id: number;
+    unit_id: number | null;
+    page_label: string | null;
+    text: string;
+    start: number;
+    end: number;
+    status: "placed" | "not_used" | "choose";
+    replaces: "flub" | "missing" | "reading";
+  }[];
+  unmatched: { start: number; end: number; text: string }[];
 }
 
 export interface Comparison {
@@ -538,8 +601,9 @@ export const api = {
   closeProject: () => request<{ closed: boolean }>("POST", "/api/project/close"),
   /** The open project, or null if none is open. */
   project: () => request<ProjectSummary | null>("GET", "/api/project"),
-  importPaths: (paths: string[], mode: "copy" | "reference") =>
-    request<{ job_id: string }>("POST", "/api/project/sources/import", { paths, mode }),
+  importPaths: (paths: string[], mode: "copy" | "reference", role: "narration" | "pickup" = "narration") =>
+    request<{ job_id: string }>("POST", "/api/project/sources/import", role === "pickup" ? { paths, mode, role } : { paths, mode }),
+  pickups: () => request<PickupReport[]>("GET", "/api/project/pickups"),
   relink: (sourceId: number, path: string) =>
     request<ProjectSummary>("POST", `/api/project/sources/${sourceId}/relink`, { path }),
   peaks: (sourceId: number, level: number, start = 0, count?: number) =>
@@ -569,10 +633,15 @@ export const api = {
   finalize: () => request<FinalizeView>("GET", "/api/project/finalize"),
   saveFinalize: (s: Partial<FinalizeSettings>) => request<FinalizeView>("PUT", "/api/project/finalize", s),
   analyze: (split: SplitMode) => request<{ job_id: string }>("POST", "/api/project/finalize/analyze", { split }),
-  preflight: (format: ExportFormat, split: SplitMode) =>
-    request<Preflight>("GET", `/api/project/export/preflight?format=${format}&split=${split}`),
-  exportAudio: (format: ExportFormat, split: SplitMode, kbps: number | null) =>
-    request<{ job_id: string }>("POST", "/api/project/export", { format, split, kbps }),
+  preflight: (format: ExportFormat, split: SplitMode, chapter: number | null = null) =>
+    request<Preflight>(
+      "GET",
+      `/api/project/export/preflight?format=${format}&split=${split}${chapter === null ? "" : `&chapter=${chapter}`}`,
+    ),
+  exportAudio: (format: ExportFormat, split: SplitMode, kbps: number | null, chapter: number | null = null) =>
+    request<{ job_id: string }>("POST", "/api/project/export", { format, split, kbps, chapter }),
+  chapters: () => request<Chapter[]>("GET", "/api/project/chapters"),
+  editCheck: () => request<EditCheck>("GET", "/api/project/edit-check"),
   exports: () => request<ExportReport[]>("GET", "/api/project/exports"),
   guideRows: (q: string) => request<{ header: Record<string, unknown>; rows: GuideRow[] }>("GET", `/api/project/guide/rows?${q}`),
   lanes: (start: number, end: number) =>
@@ -656,7 +725,7 @@ export async function fetchAllPeaks(sourceId: number, level: number): Promise<Pe
 function uploadTo<T>(url: string, file: File, onProgress?: (fraction: number) => void): Promise<T> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("PUT", `${url}?filename=${encodeURIComponent(file.name)}`);
+    xhr.open("PUT", `${url}${url.includes("?") ? "&" : "?"}filename=${encodeURIComponent(file.name)}`);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress?.(e.loaded / e.total);
     };
@@ -675,9 +744,14 @@ function uploadTo<T>(url: string, file: File, onProgress?: (fraction: number) =>
   });
 }
 
-/** Upload an audio file; resolves to the import job's id. */
-export async function uploadFile(file: File, onProgress?: (fraction: number) => void): Promise<string> {
-  const r = await uploadTo<{ job_id: string }>("/api/project/sources/upload", file, onProgress);
+/** Upload an audio file (a pickup: re-recorded lines, D-062); resolves to the import job's id. */
+export async function uploadFile(
+  file: File,
+  onProgress?: (fraction: number) => void,
+  role: "narration" | "pickup" = "narration",
+): Promise<string> {
+  const url = role === "pickup" ? "/api/project/sources/upload?role=pickup" : "/api/project/sources/upload";
+  const r = await uploadTo<{ job_id: string }>(url, file, onProgress);
   return r.job_id;
 }
 

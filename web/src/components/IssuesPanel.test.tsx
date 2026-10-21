@@ -68,7 +68,7 @@ const SETTINGS = {
   low_confidence: 0.6,
 };
 
-function setup(list: IssueList = LIST) {
+function setup(list: IssueList = LIST, props: Partial<Parameters<typeof IssuesPanel>[0]> = {}) {
   const state = { issues: list.issues.map((i) => ({ ...i })) };
   const fetch = mockApi({
     "GET /api/project/issues": () => ({ ...list, issues: state.issues }),
@@ -89,7 +89,7 @@ function setup(list: IssueList = LIST) {
     "POST /api/project/analysis": { job_id: "j1" },
     "POST /api/project/issues/2/shorten": { regions: [] },
   });
-  render(<IssuesPanel checks={["flubs", "silences"]} canRun revision={0} onError={() => undefined} />);
+  render(<IssuesPanel checks={["flubs", "silences"]} canRun revision={0} onError={() => undefined} {...props} />);
   return fetch;
 }
 
@@ -125,16 +125,13 @@ describe("IssuesPanel", () => {
     setup();
     const table = await screen.findByRole("table");
     const rows = within(table).getAllByRole("row").slice(1);
-    expect(rows.map((r) => within(r).getAllByRole("cell")[1]?.textContent)).toEqual([
-      "Long pause",
-      "Flub",
-      "Unread line",
-    ]);
+    expect(rows.map((r) => r.querySelector(".chip")?.textContent)).toEqual(["Long pause", "Flub", "Unread line"]);
+    expect(rows.map((r) => within(r).getAllByRole("cell")[2]?.textContent)).toEqual(["p. 1", "p. 2", "p. 3"]);
     expect(rows[1]).toHaveTextContent("Heard: I thought those grapes were ripe, he said, but I see they are quite sour.");
     expect(rows[1]).toHaveTextContent("New");
-    expect(screen.getByText("3 open · 0 resolved · 1 dismissed")).toBeInTheDocument();
+    expect(screen.getByText("3 to review · 0 fixed · 1 OK as is")).toBeInTheDocument();
     // The dismissed one is a filter away.
-    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "dismissed" } });
+    fireEvent.click(screen.getByLabelText(/^OK as is/));
     const only = within(screen.getByRole("table")).getAllByRole("row").slice(1);
     expect(only).toHaveLength(1);
     expect(only[0]).not.toHaveTextContent("New"); // last touched by an earlier check
@@ -158,7 +155,7 @@ describe("IssuesPanel", () => {
     fireEvent.change(note, { target: { value: "room noise" } });
     fireEvent.keyDown(note, { key: "Enter" });
     await waitFor(() => expect(patches(fetch)).toContainEqual({ ids: [2], note: "room noise" }));
-    expect(await screen.findByText("room noise")).toBeInTheDocument();
+    expect(await screen.findByText("Note: room noise")).toBeInTheDocument();
 
     focus(rows()[0]);
     fireEvent.keyDown(table, { key: "x" });
@@ -169,7 +166,7 @@ describe("IssuesPanel", () => {
     await waitFor(() => expect(patches(fetch)).toContainEqual({ ids: [2, 3], status: "dismissed" }));
     await waitFor(() => expect(screen.queryByRole("table")).not.toBeInTheDocument());
 
-    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "all" } });
+    fireEvent.click(screen.getByLabelText(/^All$/));
     focus(within(screen.getByRole("table")).getAllByRole("row")[1]);
     fireEvent.keyDown(screen.getByRole("table"), { key: "o" });
     await waitFor(() => expect(patches(fetch).at(-1)).toMatchObject({ status: "open" }));
@@ -184,7 +181,45 @@ describe("IssuesPanel", () => {
     expect(audio.src).toContain("/api/project/sources/1/excerpt?start=29.670&end=36.200");
     expect(screen.getByRole("button", { name: "Play ch01_take1 0:29.7" })).toHaveTextContent("■");
     // Unread lines have nothing to play.
-    expect(within(within(table).getAllByRole("row")[3]!).queryByRole("button")).toBeNull();
+    expect(within(within(table).getAllByRole("row")[3]!).queryByRole("button", { name: /^Play/ })).toBeNull();
+  });
+
+  test("each issue has its own Fixed and OK-as-is buttons, and reports decisions", async () => {
+    let decided = 0;
+    const fetch = setup(LIST, { onDecided: () => decided++ });
+    const table = await screen.findByRole("table");
+    const flub = within(table).getAllByRole("row")[2]!;
+    fireEvent.click(within(flub).getByRole("button", { name: "Fixed" }));
+    await waitFor(() => expect(patches(fetch)).toEqual([{ ids: [1], status: "resolved" }]));
+    await waitFor(() => expect(decided).toBe(1));
+    expect(screen.getByText("2 to review · 1 fixed · 1 OK as is")).toBeInTheDocument();
+    // Bulk buttons only once something is ticked.
+    expect(screen.queryByRole("button", { name: /selected$/ })).toBeNull();
+    fireEvent.click(screen.getByLabelText("Select Long pause at ch01_take1 0:12.4"));
+    expect(screen.getByRole("button", { name: "Fixed 1 selected" })).toBeEnabled();
+  });
+
+  test("in a chapter, only that chapter's issues (D-059)", async () => {
+    const chapter = {
+      id: 50,
+      number: 1,
+      title: "Chapter One.",
+      page_label: "1",
+      status: "recorded" as const,
+      sentences: 4,
+      read: 4,
+      not_recorded: 0,
+      sentence_ids: [1, 3, 7],
+      spans: [{ source_id: 1, start: 0, end: 40 }],
+      timeline: null,
+      open_issues: 2,
+    };
+    setup(LIST, { scope: chapter });
+    const table = await screen.findByRole("table");
+    const rows = within(table).getAllByRole("row").slice(1);
+    // The unread line (unit 9) is in another chapter.
+    expect(rows.map((r) => r.querySelector(".chip")?.textContent)).toEqual(["Long pause", "Flub"]);
+    expect(screen.getByText("2 to review · 0 fixed · 1 OK as is")).toBeInTheDocument();
   });
 
   test("re-run checks and thresholds", async () => {

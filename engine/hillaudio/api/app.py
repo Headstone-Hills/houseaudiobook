@@ -20,7 +20,17 @@ from pydantic import BaseModel, Field
 
 from hillaudio import __version__, functions, settings, tools
 from hillaudio.analysis.peaks import BASE, FACTOR, LEVELS, Peaks
-from hillaudio.api import analysis, edl, finalize, issues, manuscript, models, takes, timeline
+from hillaudio.api import (
+    analysis,
+    chapters,
+    edl,
+    finalize,
+    issues,
+    manuscript,
+    models,
+    takes,
+    timeline,
+)
 from hillaudio.api.guard import DEFAULT_HOSTS, LocalOnlyGuard, allowed_origins
 from hillaudio.api.jobs import JobContext
 from hillaudio.api.state import EngineState, TranscriberFactory
@@ -49,6 +59,7 @@ class OpenProject(BaseModel):
 class ImportPaths(BaseModel):
     paths: list[str] = Field(min_length=1)
     mode: Literal["copy", "reference"] = "copy"
+    role: Literal["narration", "pickup"] = "narration"  # D-062
 
 
 class Relink(BaseModel):
@@ -115,7 +126,11 @@ def create_app(
         return state.jobs.submit("verify", f"Verifying sources of {p.name}", run).id
 
     def start_import(
-        p: Project, paths: list[tuple[Path, str | None]], mode: str, cleanup: Path | None = None
+        p: Project,
+        paths: list[tuple[Path, str | None]],
+        mode: str,
+        cleanup: Path | None = None,
+        role: Literal["narration", "pickup"] = "narration",
     ) -> str:
         def run(ctx: JobContext) -> dict[str, Any]:
             results: list[dict[str, Any]] = []
@@ -131,6 +146,7 @@ def create_app(
                             path,
                             mode,  # type: ignore[arg-type]
                             original_name=original_name,
+                            role=role,
                             progress=scaled,
                             check_cancel=ctx.check_cancel,
                         )
@@ -155,7 +171,8 @@ def create_app(
             return {"files": results}
 
         label = paths[0][1] or paths[0][0].name if len(paths) == 1 else f"{len(paths)} files"
-        return state.jobs.submit("import", f"Importing {label}", run, lane="import").id
+        what = "pickups " if role == "pickup" else ""
+        return state.jobs.submit("import", f"Importing {what}{label}", run, lane="import").id
 
     def load_peaks(p: Project, source_id: int) -> tuple[Any, Peaks]:
         try:
@@ -231,10 +248,18 @@ def create_app(
     @app.post("/api/project/sources/import")
     def import_paths(body: ImportPaths) -> dict[str, str]:
         p = state.require_project()
-        return {"job_id": start_import(p, [(Path(x), None) for x in body.paths], body.mode)}
+        return {
+            "job_id": start_import(
+                p, [(Path(x), None) for x in body.paths], body.mode, role=body.role
+            )
+        }
 
     @app.put("/api/project/sources/upload")
-    async def upload(request: Request, filename: str = Query(min_length=1)) -> dict[str, str]:
+    async def upload(
+        request: Request,
+        filename: str = Query(min_length=1),
+        role: Literal["narration", "pickup"] = "narration",
+    ) -> dict[str, str]:
         """Browsers can't share file paths, so drag-and-drop streams the bytes here."""
         p = state.require_project()
         name = Path(filename).name  # never trust a client path
@@ -250,7 +275,7 @@ def create_app(
         except BaseException:
             tmp.unlink(missing_ok=True)
             raise
-        return {"job_id": start_import(p, [(tmp, name)], "copy", cleanup=tmp)}
+        return {"job_id": start_import(p, [(tmp, name)], "copy", cleanup=tmp, role=role)}
 
     @app.post("/api/project/sources/{source_id}/relink")
     def relink(source_id: int, body: Relink) -> dict[str, Any]:
@@ -328,6 +353,7 @@ def create_app(
 
     app.include_router(manuscript.router)
     app.include_router(analysis.router)
+    app.include_router(chapters.router)
     app.include_router(issues.router)
     app.include_router(edl.router)
     app.include_router(takes.router)

@@ -4,6 +4,8 @@ import { cleanup } from "@testing-library/react";
 
 afterEach(() => {
   cleanup();
+  // The step and chapter a project was left on are remembered; tests start fresh.
+  localStorage.clear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });

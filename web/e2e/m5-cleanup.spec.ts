@@ -2,10 +2,8 @@
 // commentary as EDL regions; they're reviewed, restored, trimmed and undone from
 // the keyboard; a long pause is shortened; history survives a reload.
 import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
-
-const FIXTURES = resolve(import.meta.dirname, "../../engine/fixtures");
+import { checkedBook, step } from "./steps";
 
 test("clean up, review removed material, undo and redo", async ({ page }) => {
   const projects = process.env.E2E_PROJECTS!;
@@ -15,22 +13,12 @@ test("clean up, review removed material, undo and redo", async ({ page }) => {
 
   await page.request.post("/api/project/close");
   await page.goto("/");
-  await page.getByLabel("Name").fill("Cleanup");
-  await page.getByLabel("Location").fill(projects);
-  await page.getByRole("button", { name: "Create project" }).click();
-  await page
-    .getByLabel(/import by path/)
-    .fill(["ch01_take1.wav", "ch01_take2.wav", "ch02_take1.wav"].map((n) => `${FIXTURES}/${n}`).join("\n"));
-  await page.getByRole("button", { name: "Import", exact: true }).click();
-  await expect(page.locator("table.sources tbody tr")).toHaveCount(3, { timeout: 20_000 });
-  await page.getByLabel("Or by path").fill(`${FIXTURES}/manuscript.txt`);
-  await page.getByRole("button", { name: "Preview", exact: true }).click();
-  await page.getByRole("button", { name: "Import manuscript" }).click();
-  await expect(page.getByText(/13 sentences/).first()).toBeVisible({ timeout: 20_000 });
-  await page.getByRole("button", { name: "Transcribe and compare" }).click();
+  await checkedBook(page, "Cleanup", projects);
+  await step(page, "Clean up");
 
   const removed = page.locator("section.removed");
-  await expect(removed.getByText(/4 removed · 0 suggested · 0 restored/)).toBeVisible({ timeout: 30_000 });
+  const summary = removed.getByRole("list", { name: "Summary" });
+  await expect(summary).toContainText("0 suggested4 cut0 kept", { timeout: 30_000 });
   const rows = removed.locator("table tbody tr");
   await expect(rows).toHaveCount(4);
   await expect(rows.nth(0)).toContainText("Stutter");
@@ -45,11 +33,11 @@ test("clean up, review removed material, undo and redo", async ({ page }) => {
 
   // Restore the commentary, then undo and redo it from the keyboard.
   await page.keyboard.press("r");
-  await expect(removed.getByText(/3 removed · 0 suggested · 1 restored/)).toBeVisible();
+  await expect(summary).toContainText("0 suggested3 cut1 kept");
   await page.keyboard.press("Control+z");
-  await expect(removed.getByText(/4 removed · 0 suggested · 0 restored/)).toBeVisible();
+  await expect(summary).toContainText("0 suggested4 cut0 kept");
   await page.keyboard.press("Control+Shift+z");
-  await expect(removed.getByText(/3 removed · 0 suggested · 1 restored/)).toBeVisible();
+  await expect(summary).toContainText("0 suggested3 cut1 kept");
 
   // Bring back 50 ms at the start of the stutter cut (a trim on the clip edge).
   await rows.nth(0).focus();
@@ -57,18 +45,23 @@ test("clean up, review removed material, undo and redo", async ({ page }) => {
   await page.keyboard.press("[");
   await expect(rows.nth(0).locator("td").nth(3)).not.toHaveText(before ?? "");
 
-  // Shorten the paragraph-break pause from the Issues panel, then re-run checks.
+  // Shorten the paragraph-break pause from Fix mistakes, then re-run checks.
+  await step(page, "Fix mistakes");
   const issues = page.locator("section.issues");
   const pause = issues.locator("table.issue-table tbody tr").filter({ hasText: "paragraph break" });
   await pause.getByRole("button", { name: /Shorten to 1.2 s/ }).click();
-  await expect(removed.getByText("Shortened pause")).toBeVisible();
+  await expect(pause.getByText(/Shortened to 1.2 s/)).toBeVisible();
   await issues.getByRole("button", { name: "Re-run checks" }).click();
-  await expect(issues.getByText("2 open · 1 resolved · 0 dismissed")).toBeVisible({ timeout: 20_000 });
+  await expect(issues.getByText("2 to review · 1 fixed · 0 OK as is")).toBeVisible({ timeout: 20_000 });
+  await step(page, "Clean up");
+  await expect(removed.getByText("Shortened pause")).toBeVisible();
 
   // History is saved with the project.
   await page.reload();
   const again = page.locator("section.removed");
-  await expect(again.getByText(/4 removed · 0 suggested · 1 restored/)).toBeVisible({ timeout: 20_000 });
+  await expect(again.getByRole("list", { name: "Summary" })).toContainText("0 suggested4 cut1 kept", {
+    timeout: 20_000,
+  });
   await again.getByText("Edit history").click();
   // Cleanup, takes, restore (undone and redone: one entry), trim, shorten. A
   // re-run that changes nothing adds no entry.

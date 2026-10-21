@@ -363,6 +363,31 @@ Deferred and risks:
   - The ffmpeg source is kept by every build and uploaded by CI as `ffmpeg-source`, for each release.
 - **Bug found and fixed**, with a regression test: Alt+Up/Down right after "add track" could be ignored. It read the tracks from the last render, which didn't have the new one yet. The move is now built from the queued view, like the other edits. Found as an intermittent m7 e2e failure.
 
+## After M9 · chapters, steps, partial recordings (2026-10-21)
+Asked for by the user after trying the app (D-059, D-060).
+- [x] Audio that covers part of the manuscript: the rest is "not recorded yet", not unread lines (engine + UI, tests).
+- [x] Chapter workspaces: `GET /api/project/chapters`; every step, export and the guide narrow to the chosen chapter.
+- [x] One step at a time: a sidebar of steps with status, an overview that says what's next, Next/Back.
+- [x] Plainer words, issue cards with their own buttons, and a visual refresh in light and dark.
+- [x] Undo/redo shortcuts on every step (they depended on the Removed panel being on screen).
+- [x] e2e specs updated for step navigation; a new one for a half-recorded book and chapters.
+
+Deferred and risks:
+- Chapters come from headings only. A manuscript without chapter headings is one workspace, the whole book.
+- Analysis runs on the whole book even in a chapter. It's quick to re-run (cached transcripts), but not per chapter.
+- The edit history is the book's: undo in one chapter can undo an edit made in another.
+
+## After M9 · edit check, pickups, timeline cuts (2026-10-21)
+Asked for by the user while testing (D-061, D-062, D-063).
+- [x] Fixed: a commentary cut could come out backwards and fail the whole analysis (an aside with no duration); regression test.
+- [x] Edit step: Re-run checks, and a live list of lines the edit removed or clipped, with Restore.
+- [x] Pickups: import re-recorded lines; they're transcribed, placed over the flubs (or into skipped lines), with a take chooser where needed; nothing else in a pickup file plays.
+- [x] Timeline: visible, clickable cuts, a cut panel with rolling edit, edge moves, listen and restore; a selection bar.
+
+Deferred and risks:
+- A pickup line that matches no manuscript line is listed but not placed: place it by hand on the timeline.
+- Pickups are placed by the latest comparison; adding narration after pickups means checking the reading again (as usual).
+
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.
 1. Typical project size (hours, number of takes)? *Assumed: SPEC §8's 10 h / ~2 GB as the upper bound.*

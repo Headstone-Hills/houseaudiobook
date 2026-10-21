@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import {
   api,
+  excerptUrl,
   renderUrl,
   type ClipRef,
   type Lanes,
@@ -14,6 +15,7 @@ import {
   clipAt,
   clipKey,
   fit,
+  fitRange,
   follow,
   nextSnap,
   snapPoints,
@@ -30,7 +32,15 @@ import {
 const RULER_H = 22;
 const MARKER_H = 16;
 const TRACK_H = 64;
-const REMOVED_H = 14;
+const CUT_KIND: Record<string, string> = {
+  stutter: "a stutter (cleanup)",
+  false_start: "a false start (cleanup)",
+  commentary: "off-script speech (cleanup)",
+  pause: "a shortened pause",
+  cut: "your cut",
+  take: "another take",
+};
+const REMOVED_H = 22; // the cuts lane: a ✂ tab per cut, to click
 const WORDS_H = 22;
 const EDGE_PX = 6;
 const FADE_PX = 10;
@@ -42,6 +52,8 @@ interface Props {
   sources: Source[];
   peakSettings: PeakSettings;
   revision: number;
+  /** A chapter's place on the timeline: shown first, and what Fit fits (D-059). */
+  focus?: { start: number; end: number } | null;
   onEdited: () => void;
   onError: (msg: string) => void;
 }
@@ -54,7 +66,7 @@ type Drag =
 
 /** Multitrack timeline editor (SPEC §6.6). Keyboard first: every tool has a key
  * (see the key list under the toolbar); the mouse does the same by dragging. */
-export function TimelinePanel({ sources, peakSettings, revision, onEdited, onError }: Props) {
+export function TimelinePanel({ sources, peakSettings, revision, focus = null, onEdited, onError }: Props) {
   const [view, setView] = useState<TimelineView | null>(null);
   const [lanes, setLanes] = useState<Lanes | null>(null);
   const [vp, setVp] = useState<Viewport>({ start: 0, pps: 20, width: 1000 });
@@ -63,6 +75,7 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
   const [sel, setSel] = useState<[number, number] | null>(null);
   const [trackId, setTrackId] = useState(1);
   const [selected, setSelected] = useState<string | null>(null);
+  const [cutId, setCutId] = useState<number | null>(null); // the cut being adjusted
   const [snap, setSnap] = useState(true);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [status, setStatus] = useState("");
@@ -76,6 +89,11 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
 
   // -- data ---------------------------------------------------------------------------------
 
+  // The first load fits the chapter (or the book); later loads keep the view.
+  const focusRef = useRef(focus);
+  useEffect(() => {
+    focusRef.current = focus;
+  }, [focus]);
   useEffect(() => {
     let cancelled = false;
     api
@@ -83,13 +101,33 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
       .then((v) => {
         if (cancelled) return;
         setView(v);
-        setVp((old) => (old.start === 0 && old.pps === 20 ? fit(v.duration, old.width) : old));
+        const f = focusRef.current;
+        setVp((old) =>
+          old.start === 0 && old.pps === 20
+            ? f
+              ? fitRange(f.start, f.end, old.width)
+              : fit(v.duration, old.width)
+            : old,
+        );
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, [revision]);
+
+  // Another chapter chosen: go to it (adjusting state as the prop changes, not in an effect).
+  const focusKey = focus ? `${focus.start}:${focus.end}` : "";
+  const [seenFocus, setSeenFocus] = useState(focusKey);
+  if (focusKey !== seenFocus) {
+    setSeenFocus(focusKey);
+    if (focus) {
+      setVp((v) => fitRange(focus.start, focus.end, v.width));
+      setPlayhead(focus.start);
+    }
+  }
+  const fitAll = (v: Viewport) =>
+    focus ? fitRange(focus.start, focus.end, v.width) : fit(view?.duration ?? 0, v.width);
 
   useEffect(() => {
     const el = box.current;
@@ -123,6 +161,15 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
   const clips = useMemo(() => view?.clips ?? [], [view]);
   const tracks = useMemo(() => view?.tracks ?? [], [view]);
   const current = clips.find((c) => clipKey(c) === selected) ?? null;
+  // Cuts on the timeline, in order: where audio was taken out (a join).
+  const cuts = useMemo(
+    () =>
+      (view?.removed ?? [])
+        .filter((r) => r.t !== null && r.status === "removed")
+        .sort((a, b) => a.t! - b.t!),
+    [view],
+  );
+  const cut = cuts.find((r) => r.id === cutId) ?? null;
 
   // Edits run one after another, each built from the timeline as the previous
   // one left it: pressing + twice quickly gives +2 dB, not +1 twice.
@@ -221,7 +268,33 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
         const c = clipIn(v);
         return c ? api.tl("trim", { ref: ref(c), edge, t: playhead }) : null;
       }, `Trimmed ${edge}`),
-    roll: (dir: number) => edit(() => api.tl("roll", { t: playhead, delta: dir * NUDGE_S }), "Rolling edit"),
+    // A rolling edit on the chosen cut, or the nearest one (within 1 s): no need
+    // to land the playhead exactly on the join.
+    roll: (dir: number) => {
+      const r = cut ?? nearestCut(1);
+      if (!r) return setStatus("Choose a cut first: click a ✂ in the cuts lane, or press C");
+      if (r.kind === "take") return setStatus("That cut is another take of a line: change it in Choose takes");
+      setCutId(r.id);
+      edit(() => api.rollRegion(r.id, dir * NUDGE_S).then(() => api.timeline()), dir < 0 ? "Moved the cut earlier" : "Moved the cut later");
+    },
+    /** Move one edge of the chosen cut: `by` seconds in the recording (+ later). */
+    cutEdge: (edge: "start" | "end", by: number) => {
+      if (!cut || cut.kind === "take") return;
+      const bounds = edge === "start" ? { start: Math.max(0, cut.start + by) } : { end: Math.max(cut.start, cut.end + by) };
+      edit(() => api.editRegion(cut.id, bounds).then(() => api.timeline()), `Cut ${edge} moved`);
+    },
+    restoreCut: () => {
+      if (!cut || cut.kind === "take") return;
+      const id = cut.id;
+      setCutId(null);
+      edit(() => api.setRegionStatus([id], "restored").then(() => api.timeline()), `Restored ${cut.kind.replace("_", " ")}`);
+    },
+    goCut: (dir: number) => {
+      const next =
+        dir > 0 ? cuts.find((r) => r.t! > playhead + 0.01) : [...cuts].reverse().find((r) => r.t! < playhead - 0.01);
+      if (next) selectCut(next);
+      else setStatus(dir > 0 ? "No more cuts after the playhead" : "No cuts before the playhead");
+    },
     // To the track above or below, worked out from the queued view: right after
     // "add track" the new track may not have rendered yet (regression).
     moveTrack: (dir: number) =>
@@ -273,6 +346,27 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
       setStatus(`Rendering ${timecode(a)}–${timecode(b)} from the sources`);
     },
   };
+
+  const playAcross = (t: number) => {
+    const el = new Audio(renderUrl(t - 3, t + 3));
+    el.play()?.catch(() => undefined);
+    setStatus(`Playing 3 s either side of the cut at ${timecode(t)}`);
+  };
+  const playCut = (r: { source_id: number; start: number; end: number }) => {
+    const el = new Audio(excerptUrl(r.source_id, r.start, r.end, 0.5));
+    el.play()?.catch(() => undefined);
+  };
+  function nearestCut(within: number) {
+    const r = cuts
+      .filter((x) => x.kind !== "take")
+      .sort((a, b) => Math.abs(a.t! - playhead) - Math.abs(b.t! - playhead))[0];
+    return r && Math.abs(r.t! - playhead) <= within ? r : null;
+  }
+  function selectCut(r: (typeof cuts)[number]) {
+    setCutId(r.id);
+    seek(r.t!);
+    setStatus(`Cut at ${timecode(r.t!)}: ${r.seconds.toFixed(2)} s taken out`);
+  }
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const tag = (e.target as HTMLElement).tagName;
@@ -352,6 +446,10 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
           return tools.roll(-1), true;
         case ".":
           return tools.roll(1), true;
+        case "c":
+          return tools.goCut(1), true;
+        case "C":
+          return tools.goCut(-1), true;
         case "R":
           return tools.restoreNear(), true;
         case "p":
@@ -361,7 +459,7 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
         case "Z":
           return setVp((v) => zoom(v, 0.5, playhead)), true;
         case "0":
-          return view && setVp((v) => fit(view.duration, v.width)), true;
+          return view && setVp(fitAll), true;
         case "n":
           return setSnap((s) => !s), true;
       }
@@ -450,6 +548,7 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
     const color = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
     const fg = color("--fg", "#222");
     const muted = color("--muted", "#888");
+    const accent = color("--accent", "#2d5bd0");
     const wave = color("--wave", "#3b82f6");
     ctx.clearRect(0, 0, vp.width, rows.height);
     ctx.font = "11px system-ui, sans-serif";
@@ -555,13 +654,31 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
           }
         }
       } else if (row.kind === "removed") {
+        // Each cut is a ✂ tab here and a line down through the narration: it takes
+        // no time on the timeline, so it's drawn as a mark, not a stretch.
+        ctx.font = "12px system-ui, sans-serif";
         for (const r of view.removed) {
-          if (r.t === null || r.kind === "take" && r.status !== "removed") continue;
+          if (r.t === null || (r.kind === "take" && r.status !== "removed")) continue;
           const x = toX(vp, r.t);
-          if (x < -10 || x > vp.width + 10) continue;
-          ctx.fillStyle = r.status === "removed" ? "rgba(220,38,38,0.35)" : "rgba(127,127,127,0.25)";
-          ctx.fillRect(x - 3, row.y + 2, 6, row.h - 4); // ghosted: it takes no time on the timeline
+          if (x < -20 || x > vp.width + 20) continue;
+          const on = r.id === cutId;
+          if (r.status !== "removed") {
+            ctx.fillStyle = "rgba(127,127,127,0.35)"; // suggested or kept: not taken out
+            ctx.fillRect(x - 2, row.y + 4, 4, row.h - 8);
+            continue;
+          }
+          ctx.fillStyle = on ? accent : "rgba(220,38,38,0.85)";
+          ctx.fillRect(x - 8, row.y + 2, 16, row.h - 4);
+          ctx.fillStyle = "#fff";
+          ctx.fillText("✂", x - 6, row.y + row.h - 7);
+          ctx.fillStyle = on ? accent : "rgba(220,38,38,0.6)";
+          ctx.fillRect(x - (on ? 1 : 0.5), row.y - TRACK_H, on ? 2 : 1, TRACK_H);
+          if (vp.pps >= 30) {
+            ctx.fillStyle = fg;
+            ctx.fillText(`${r.seconds.toFixed(1)} s`, x + 10, row.y + row.h - 7);
+          }
         }
+        ctx.font = "11px system-ui, sans-serif";
       } else if (row.kind === "words" && lanes && vp.pps >= 15) {
         ctx.fillStyle = fg;
         let lastX = -Infinity;
@@ -587,7 +704,7 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
     }
     ctx.fillStyle = "#dc2626";
     ctx.fillRect(toX(vp, playhead) - 0.5, 0, 1.5, rows.height);
-  }, [view, lanes, vp, rows, playhead, sel, selected, trackId, drag, peakRange, sourceById, peakSettings, peaksTick, clips, tracks]);
+  }, [view, lanes, vp, rows, playhead, sel, selected, trackId, drag, peakRange, sourceById, peakSettings, peaksTick, clips, tracks, cutId]);
 
   // -- mouse -------------------------------------------------------------------------------------
 
@@ -613,7 +730,15 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
       return;
     }
     if (row.kind === "removed") {
-      seek(t);
+      const hitCut = cuts
+        .map((r) => ({ r, d: Math.abs(toX(vp, r.t!) - x) }))
+        .filter((h) => h.d <= 10)
+        .sort((a, b) => a.d - b.d)[0];
+      if (hitCut) selectCut(hitCut.r);
+      else {
+        setCutId(null);
+        seek(t);
+      }
       return;
     }
     setTrackId(row.trackId!);
@@ -684,17 +809,28 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
         <button type="button" onClick={() => setVp((v) => zoom(v, 0.5, playhead))}>
           Zoom out
         </button>
-        <button type="button" onClick={() => setVp((v) => fit(view.duration, v.width))}>
-          Fit
+        <button type="button" onClick={() => setVp(fitAll)}>
+          {focus ? "Fit chapter" : "Fit"}
         </button>
+        {focus && (
+          <button type="button" onClick={() => setVp((v) => fit(view.duration, v.width))}>
+            Whole book
+          </button>
+        )}
         <label>
           <input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} /> Snap
         </label>
+        <button type="button" onClick={() => tools.goCut(-1)} title="C with Shift">
+          ◀ Previous cut
+        </button>
+        <button type="button" onClick={() => tools.goCut(1)} title="C">
+          Next cut ▶
+        </button>
         <button type="button" onClick={tools.split}>
           Split
         </button>
         <button type="button" onClick={tools.deleteSel}>
-          Delete
+          {sel ? "Cut selection" : "Delete"}
         </button>
         <button type="button" onClick={tools.marker}>
           Add marker
@@ -706,16 +842,94 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
           Render preview
         </button>
       </div>
-      <p className="muted" id="timeline-keys">
-        Keys: Space play · ←/→ 1 s (Shift 10 s) · Alt+←/→ snap · Home/End · ↑/↓ track · Tab clip · [ ] selection ·
-        Delete ripple delete · S split · Shift+[ ] trim to playhead · , . roll · Alt+Shift+←/→ move clip · Alt+↑/↓
-        move to track · +/− gain · F/G fade in/out · U mute clip · Shift+U/Shift+S mute/solo track · M marker · T add
-        track · Shift+R restore cut · P render preview · Z/Shift+Z zoom · 0 fit · N snap on/off · ⌘/Ctrl+Z undo
-      </p>
+      <details className="keys">
+        <summary>Keyboard shortcuts</summary>
+        <p className="muted" id="timeline-keys">
+          Space play · ←/→ 1 s (Shift 10 s) · Alt+←/→ snap · Home/End · ↑/↓ track · Tab clip · [ ] selection · Delete
+          ripple delete · S split · Shift+[ ] trim to playhead · C / Shift+C next/previous cut · , . move the cut 50 ms · Alt+Shift+←/→ move clip · Alt+↑/↓ move to
+          track · +/− gain · F/G fade in/out · U mute clip · Shift+U/Shift+S mute/solo track · M marker · T add track ·
+          Shift+R restore cut · P render preview · Z/Shift+Z zoom · 0 fit · N snap on/off · ⌘/Ctrl+Z undo
+        </p>
+      </details>
       <p role="status" aria-live="polite" className="muted">
         {status}
         {sel ? ` · selection ${timecode(sel[0])}–${timecode(sel[1])}` : ""}
       </p>
+      <p className="timeline-help">
+        <strong>To cut:</strong> drag across the waveform to select, then <em>Cut selection</em>.{" "}
+        <strong>To adjust a cut:</strong> click its ✂ in the cuts lane under the narration (or press C for the next one).
+      </p>
+      {sel && sel[1] > sel[0] && (
+        <div className="edit-bar" role="group" aria-label="Selection">
+          <span>
+            Selected {timecode(sel[0])}–{timecode(sel[1])} ({(sel[1] - sel[0]).toFixed(2)} s)
+          </span>
+          <button type="button" onClick={tools.renderPreview}>
+            ▶ Play selection
+          </button>
+          <button type="button" className="primary" onClick={tools.deleteSel}>
+            ✂ Cut selection
+          </button>
+          <button type="button" className="link" onClick={() => setSel(null)}>
+            Clear
+          </button>
+        </div>
+      )}
+      {cut && (
+        <div className="edit-bar cut-bar" role="group" aria-label="Cut">
+          <div className="cut-what">
+            <strong>✂ Cut at {timecode(cut.t!)}</strong>: {cut.seconds.toFixed(2)} s taken out
+            {cut.text ? ` (“${cut.text}”)` : ""} · {CUT_KIND[cut.kind] ?? cut.kind}
+            <button type="button" className="link" onClick={() => setCutId(null)}>
+              Close
+            </button>
+          </div>
+          <div className="cut-row">
+            <button type="button" onClick={() => playAcross(cut.t!)}>
+              ▶ Listen across the cut
+            </button>
+            <button type="button" onClick={() => playCut(cut)}>
+              ▶ Hear what was cut
+            </button>
+            {cut.kind !== "take" && (
+              <button type="button" onClick={tools.restoreCut}>
+                Restore (put it back)
+              </button>
+            )}
+          </div>
+          {cut.kind === "take" ? (
+            <p className="muted">This is another take of a line: change which take plays in Choose takes.</p>
+          ) : (
+            <>
+              <div className="cut-row">
+                <span className="cut-label">Move the cut (rolling edit: same length, 50 ms a click)</span>
+                <button type="button" onClick={() => tools.roll(-1)}>
+                  ◀ Earlier
+                </button>
+                <button type="button" onClick={() => tools.roll(1)}>
+                  Later ▶
+                </button>
+              </div>
+              <div className="cut-row">
+                <span className="cut-label">Where it starts</span>
+                <button type="button" onClick={() => tools.cutEdge("start", -NUDGE_S)} aria-label="Start the cut 50 ms earlier">
+                  ◀ Cut more
+                </button>
+                <button type="button" onClick={() => tools.cutEdge("start", NUDGE_S)} aria-label="Start the cut 50 ms later">
+                  Keep more ▶
+                </button>
+                <span className="cut-label">Where it ends</span>
+                <button type="button" onClick={() => tools.cutEdge("end", -NUDGE_S)} aria-label="End the cut 50 ms earlier">
+                  ◀ Keep more
+                </button>
+                <button type="button" onClick={() => tools.cutEdge("end", NUDGE_S)} aria-label="End the cut 50 ms later">
+                  Cut more ▶
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
       <div className="timeline-body">
         <div className="track-heads" style={{ paddingTop: RULER_H + MARKER_H }}>
           {tracks.map((tr) => (

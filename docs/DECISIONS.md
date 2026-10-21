@@ -799,3 +799,136 @@ global alignment:
     FFmpeg tarball and signature, the LAME tarball, and the script.
   - CI uploads them as the `ffmpeg-source` artifact, next to the `.dmg`. They
     are not bundled in the app.
+
+## D-059 · Chapter workspaces, and audio that covers only part of the book (2026-10-21)
+The user asked to work on one chapter at a time, and for audio that covers only
+part of the manuscript not to flag the rest as missing.
+- **Text no recording reaches yet is "not recorded", not missing.**
+  `analysis/issues.unrecorded` decides, per chapter, from the readings of the
+  latest Compare to Text run:
+  - Every line of a chapter nobody has read from is not recorded yet.
+  - In a chapter that was read from, a run of unread lines before its first
+    read line or after its last is not recorded yet if it's at least 3 lines
+    (`MIN_UNRECORDED_RUN`). A line or two at an edge stays a skip: a forgotten
+    chapter title, a dropped last line.
+  - Unread lines between read ones are skips, however many. That's where a
+    narrator loses their place.
+  - The scope comes from every reading, before cuts: cutting a line later makes
+    it missing, as before.
+  - Not-recorded lines get no Unread line issue. The comparison marks them
+    `recorded: false`, and the UI counts them apart from skipped lines.
+- **Chapters are workspaces, not separate projects.** The user chose this over
+  splitting the book into one project per chapter.
+  - A chapter is a chapter heading in the manuscript. Text before the first
+    heading is one more workspace, "Opening pages". Nothing is stored:
+    `chapters.chapters()` derives each chapter's lines, status, place in each
+    recording and on the timeline, and open issues on request.
+  - Which audio belongs to which chapter comes from the alignment. The user
+    never assigns files to chapters, and a file can hold several chapters.
+  - Picking a chapter narrows every step to it: lines and issues by sentence;
+    cuts and off-script speech by time in the chapter's part of each
+    recording; takes by line; the timeline opens on the chapter.
+  - Export and the corrections guide take a `chapter` parameter. A chapter's
+    file keeps its number in the book (`02_Chapter_Two…`), so files exported
+    one chapter at a time sort together.
+  - Analysis still runs on the whole book. Transcripts are cached per file, so
+    re-checking after adding one chapter's audio is quick.
+  - The edit history (EDL) is the book's: undo on a chapter can undo an edit
+    made in another.
+
+## D-060 · One step at a time, in plainer words (2026-10-21)
+The user found the single long page hard to follow: unclear what to do next,
+too technical, too dense, and slow to act on issues.
+- **Steps.** A sidebar lists the workflow in order: Overview, Recordings,
+  Manuscript, Check the reading, Fix mistakes, Clean up, Choose takes, Edit,
+  Export. Only the chosen step is on screen, with its purpose in one sentence
+  and a Next button. Each step shows its state in the sidebar (done, to do, a
+  count to review, waiting on an earlier step). It's worked out in
+  `state/steps.ts` from data the engine already has.
+- **Overview.** Says the one thing to do next, lists every step's state, and
+  lists the chapters to pick from.
+- **Remembered.** The step and chapter are kept per project in the browser's
+  local storage, so a reload comes back to the same place.
+- **Words.** Engine terms gave way to plain ones in the UI: "Compare to Text" →
+  "Check the reading", resolved/dismissed → "Fixed"/"OK as is", removed/restored
+  → "cut"/"kept", "not read" → "skipped". The engine's names are unchanged.
+- **Issues.** Each issue is a card: a large play button, what's wrong, and its
+  own Fixed / OK as is buttons. Bulk actions appear only once issues are ticked.
+  Keyboard shortcuts are unchanged and listed under a disclosure.
+- **Undo.** ⌘/Ctrl+Z worked from anywhere only because the Removed panel was
+  always on the page. It's now registered by the project page for every step
+  (`state/undo.ts`).
+- **Look.** Cards, a sticky top bar with the chapter picker, chips for status,
+  and stat rows for counts, in light and dark.
+
+## D-061 · Checking the edit for lost lines (2026-10-21)
+The user wanted to re-run checks from the Edit step, to catch anything removed by
+accident in the earlier steps.
+- **What's checked.** Every line that was read in full: is it still heard on the
+  timeline as it is now?
+  - Words are the transcript's words that the reading heard, in order, each
+    measured only within the reading's span. The span is snapped to the audio,
+    while the recognizer's word times stray past it.
+  - Extras (a stutter's repeat) don't count. If a stutter cut takes one copy of
+    a word and the other plays, the word is heard.
+  - A word plays if 75% of it is on the timeline. Within the span, what's cut of
+    a word is speech, so a quarter gone is audible.
+  - A line is fine if one complete reading plays whole. Otherwise its best
+    reading is reported: "removed" if less than half plays, else "clipped". The
+    report lists the missing words and what cut them (cleanup kind, a take
+    choice, a cut of the user's, a mute).
+- **Where.** `analysis/edit_check.py` (pure) and `GET /api/project/edit-check`.
+  It's computed on request (0.14 s for a 3-chapter book), so the Edit step's list
+  updates after every edit. **Re-run checks** there also re-runs the flub and
+  pause checks, so Fix mistakes catches up.
+- On the user's real project it found two last words clipped by take cuts that
+  started 0.2 s early. Lines never read in full stay the Issues list's business.
+
+## D-062 · Pickups (2026-10-21)
+The user asked to import re-recorded lines and have them placed over the flubs
+automatically, with a prompt where there's more than one take to choose from.
+- **A recording has a role:** narration or pickup (schema v8). A pickup isn't
+  laid out on the timeline. Only takes placed from it play, so slates, chatter
+  and unused attempts in the file never reach the book.
+  `default_segments` skips pickups, and `place(..., homeless=True)` takes a
+  pickup's piece off the timeline instead of sending it "home".
+- **Placement** reuses takes (D-044/D-045):
+  - A pickup reading of a line with narration readings joins its take group,
+    and the ranking decides (complete, then text errors). A clean pickup over a
+    flub wins confidently and goes right before the line's original reading,
+    which is cut.
+  - A line read only in pickups (skipped in the narration) is a group of one,
+    placed before the next line read in the narration. Before the start of that
+    recording if nothing precedes it there, so its room-tone lead-in stays with
+    what follows.
+  - On a re-run, new pickup takes are re-ranked with the old. If the app had
+    chosen, the best take wins. If the user had chosen, the choice stays and the
+    line goes back to "listen and choose".
+- **The checks follow the timeline:** a reading counts as heard only if it's
+  laid out, not cut and not muted, rather than "not covered by a removed
+  region". The long-pause check skips pickup files. Cleanup in a pickup file
+  only looks for stutters.
+- A pause is named by the lines read before and after its start, heard or not.
+  A pickup replacing the next line used to make the same pause a new issue
+  (regression test).
+- **UI:** a Pickups card on Fix mistakes. Adding files imports them as pickups,
+  and when the import finishes, the reading is checked automatically. Each file
+  lists its lines: in place of the flub, fills a skipped line, not used, listen
+  and choose, or matches no line. Lines to choose get the take chooser in place.
+  Pickups are tagged in Recordings.
+
+## D-063 · Cuts you can see and adjust on the timeline (2026-10-21)
+The user couldn't tell how to cut or roll, and couldn't see the cuts.
+- A rolling edit needed the playhead exactly on a join sample, which can't be
+  hit by clicking. Rolling now acts on a chosen cut (by region, the API Clean up
+  uses), or the nearest cut within 1 s.
+- Each cut is a ✂ tab in the lane under the narration, with a line through the
+  waveform. Clicking it, or C / Shift+C (and Previous/Next cut buttons), chooses
+  a cut and opens a panel:
+  - listen across the cut, or hear what was cut;
+  - move the cut earlier or later (the rolling edit, explained in place);
+  - move its start or end ("cut more" / "keep more");
+  - restore it.
+  Take cuts point to Choose takes.
+- A one-line how-to sits above the timeline. Dragging a selection shows a bar
+  with Play selection, Cut selection and Clear.

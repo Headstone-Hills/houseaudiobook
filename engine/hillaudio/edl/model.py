@@ -29,6 +29,7 @@ class SourceInfo:
     id: int
     sample_rate: int
     num_frames: int
+    pickup: bool = False  # re-recorded lines: only placed takes play (D-062)
 
 
 @dataclass(frozen=True)
@@ -139,8 +140,9 @@ class Segment:
 
 
 def default_segments(sources: Sequence[SourceInfo]) -> list[Segment]:
-    """Each recording once, in order: the timeline before anything is moved."""
-    return [Segment(s.id, 0, s.num_frames) for s in sources]
+    """Each recording once, in order: the timeline before anything is moved.
+    Pickups aren't laid out: only the takes placed from them play (D-062)."""
+    return [Segment(s.id, 0, s.num_frames) for s in sources if not s.pickup]
 
 
 def _joins(a: Segment, b: Segment) -> bool:
@@ -228,10 +230,12 @@ def place(
     b: int,
     before: tuple[int, int] | None = None,
     at_end: bool = False,
+    homeless: bool = False,
 ) -> list[Segment]:
     """Move [a, b) of a recording so it plays just before `before` = (source,
     sample), or last (`at_end`); otherwise back where it naturally belongs in
-    its own recording."""
+    its own recording. A pickup (`homeless`) has nowhere to go back to: sent
+    home, it leaves the timeline (D-062)."""
     home = _covering(segs, source_id, a)
     attrs = segs[home] if home is not None else None
     rest = _without(segs, source_id, a, b)
@@ -253,6 +257,8 @@ def place(
                 rest[i : i + 1] = [head, tail]
                 at = i + 1
                 break
+    if at is None and homeless:
+        return normalize(rest)
     if at is None:
         # Home: after the piece of its recording that ends where it starts, or
         # before the one that starts where it ends, or else by source position.

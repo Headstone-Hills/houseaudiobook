@@ -60,6 +60,7 @@ export function SourceTable({ sources, selectedId, onSelect, onRelinked, onError
             <td>{i + 1}</td>
             <th scope="row" title={s.original_name}>
               {s.label}
+              {s.role === "pickup" && <span className="tag-pickup">Pickup</span>}
             </th>
             <td>{formatDuration(s.duration)}</td>
             <td>{describeFormat(s)}</td>

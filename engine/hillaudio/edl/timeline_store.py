@@ -86,7 +86,7 @@ def _free(r: dict[str, Any]) -> FreeClip:
 
 def load(project: Project, conn: sqlite3.Connection | None = None) -> State:
     srcs = project.sources()
-    infos = [SourceInfo(s.id, s.sample_rate, s.num_frames) for s in srcs]
+    infos = [store.infos(s) for s in srcs]
     rate = timeline_rate(infos)
 
     def read(c: sqlite3.Connection) -> State:

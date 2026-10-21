@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from hillaudio import pickups
 from hillaudio.api.edl import editable_project
 from hillaudio.api.state import EngineState, engine
 from hillaudio.edl import store, take_store
@@ -70,3 +71,9 @@ def confirm(state: State, body: Confirm) -> dict[str, Any]:
 def mark(state: State, take_id: int, body: Mark) -> dict[str, Any]:
     p = editable_project(state)
     return _run(p, lambda: take_store.mark(p, take_id, body.status))
+
+
+@router.get("/api/project/pickups")
+def pickup_report(state: State) -> list[dict[str, Any]]:
+    """Each pickup recording: its lines, placed or not, and speech matching no line (D-062)."""
+    return pickups.report(state.require_project())

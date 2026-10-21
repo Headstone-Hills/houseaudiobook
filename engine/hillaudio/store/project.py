@@ -57,6 +57,7 @@ class Source:
     label: str
     order_index: int
     imported_at: str
+    role: Literal["narration", "pickup"] = "narration"  # D-062
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> Source:

@@ -321,6 +321,12 @@ MIGRATIONS: list[str] = [
         created_at     TEXT NOT NULL
     );
     """,
+    # 8: pickups (D-062). A pickup recording holds re-recorded lines: it isn't laid
+    # out on the timeline; only the takes chosen from it play, where their lines go.
+    """
+    ALTER TABLE source_file ADD COLUMN role TEXT NOT NULL DEFAULT 'narration'
+        CHECK (role IN ('narration', 'pickup'));
+    """,
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

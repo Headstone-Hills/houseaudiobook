@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
 
-from hillaudio import issue_store
+from hillaudio import chapters, issue_store
 from hillaudio.edl import timeline_store
 from hillaudio.store.project import Project
 
@@ -35,6 +35,7 @@ class GuideOptions:
     narrator: str = ""
     include_resolved: bool = False
     include_silences: bool = False
+    chapter: int | None = None  # a chapter workspace's guide: just that chapter's lines
 
 
 def clock(t: float) -> str:
@@ -46,8 +47,11 @@ def clock(t: float) -> str:
 def rows(project: Project, o: GuideOptions) -> list[dict[str, Any]]:
     st = timeline_store.load(project)
     loc = timeline_store.Locator(st)
+    in_chapter = chapters.unit_chapters(project) if o.chapter is not None else {}
     out = []
     for i in issue_store.list_issues(project):
+        if o.chapter is not None and in_chapter.get(i["manuscript_unit_id"]) != o.chapter:
+            continue
         if i["kind"] == "silence" and not o.include_silences:
             continue
         if i["status"] == "dismissed" or (i["status"] == "resolved" and not o.include_resolved):

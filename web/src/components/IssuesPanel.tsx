@@ -21,6 +21,7 @@ import {
   type SortKey,
 } from "../state/issues";
 import { plural } from "../state/format";
+import { hasItem, type Scope } from "../state/scope";
 
 const CHANGE_LABELS = { new: "New", still_open: "", auto_resolved: "Fixed", regressed: "Back again" } as const;
 
@@ -29,13 +30,15 @@ interface Props {
   checks: string[];
   canRun: boolean;
   revision: number; // bumped when an analysis or manuscript job finishes
+  scope?: Scope; // a chapter: only its issues (D-059)
   onEdited?: () => void; // an action here changed the timeline (shorten a pause)
+  onDecided?: () => void; // a decision changed what's left to review
   onError: (msg: string) => void;
 }
 
 /** The action list (SPEC §6.4): every flagged flub, unread line and long pause,
  * with keyboard shortcuts for review. Decisions survive re-runs (§6.7). */
-export function IssuesPanel({ checks, canRun, revision, onEdited, onError }: Props) {
+export function IssuesPanel({ checks, canRun, revision, scope = null, onEdited, onDecided, onError }: Props) {
   const [data, setData] = useState<IssueList | null>(null);
   const [filter, setFilter] = useState<IssueFilter>({ kind: "all", status: "open", severity: "all" });
   const [sort, setSort] = useState<SortKey>("page");
@@ -58,9 +61,16 @@ export function IssuesPanel({ checks, canRun, revision, onEdited, onError }: Pro
     };
   }, [revision]);
 
-  const shown = useMemo(() => sortIssues(filterIssues(data?.issues ?? [], filter), sort), [data, filter, sort]);
+  const scoped = useMemo(
+    () =>
+      (data?.issues ?? []).filter((i) =>
+        hasItem(scope, { unitId: i.manuscript_unit_id, sourceId: i.source_file_id, start: i.start, end: i.end }),
+      ),
+    [data, scope],
+  );
+  const shown = useMemo(() => sortIssues(filterIssues(scoped, filter), sort), [scoped, filter, sort]);
   const current = shown.find((i) => i.id === currentId) ?? null;
-  const total = counts(data?.issues ?? []);
+  const total = counts(scoped);
 
   const merge = (updated: Issue[]) =>
     setData((d) => {
@@ -73,7 +83,10 @@ export function IssuesPanel({ checks, canRun, revision, onEdited, onError }: Pro
     if (!ids.length) return;
     api
       .decideIssues(ids, change)
-      .then((r) => merge(r.issues))
+      .then((r) => {
+        merge(r.issues);
+        onDecided?.();
+      })
       .catch(fail);
   };
 
@@ -178,43 +191,48 @@ export function IssuesPanel({ checks, canRun, revision, onEdited, onError }: Pro
     api.runAnalysis(checks, null).catch(fail);
   };
 
+  const n = selected.size;
   return (
     <section aria-labelledby="issues-heading" className="issues">
       <h2 id="issues-heading">Issues</h2>
-      <div className="run-row">
+      <div className="run-row action-bar">
         <button type="button" onClick={rerun} disabled={!canRun || !checks.length}>
           Re-run checks
         </button>
-        <span aria-live="polite">
+        <span aria-live="polite" className="muted">
           {data
-            ? `${total.open} open · ${total.resolved} resolved · ${total.dismissed} dismissed`
+            ? `${total.open} to review · ${total.resolved} fixed · ${total.dismissed} OK as is`
             : "No checks run yet."}
         </span>
       </div>
       {data?.stale && (
         <p role="status" className="warning">
-          The manuscript changed since the last comparison. Run Transcribe and compare again to re-check flubs; your
-          decisions are kept.
+          The manuscript changed since the last check. Check the reading again to update the mistakes; your decisions
+          are kept.
         </p>
       )}
 
       <div className="issue-controls">
+        <fieldset className="segmented">
+          <legend className="visually-hidden">Status</legend>
+          {STATUS_TABS.map(([value, label]) => (
+            <label key={value} className={filter.status === value ? "on" : ""}>
+              <input
+                type="radio"
+                name="issue-status"
+                checked={filter.status === value}
+                onChange={() => setFilter({ ...filter, status: value })}
+              />
+              {label}
+              {value !== "all" && <span className="count">{total[value]}</span>}
+            </label>
+          ))}
+        </fieldset>
         <Choice
           label="Type"
           value={filter.kind}
           options={[["all", "All types"], ...(Object.entries(KIND_LABELS) as [IssueKind, string][])]}
           onChange={(kind) => setFilter({ ...filter, kind })}
-        />
-        <Choice
-          label="Status"
-          value={filter.status}
-          options={[
-            ["open", "Open"],
-            ["resolved", "Resolved"],
-            ["dismissed", "Dismissed"],
-            ["all", "Any status"],
-          ]}
-          onChange={(status) => setFilter({ ...filter, status })}
         />
         <Choice
           label="Severity"
@@ -235,48 +253,54 @@ export function IssuesPanel({ checks, canRun, revision, onEdited, onError }: Pro
         />
       </div>
 
-      <div className="run-row">
-        <button type="button" onClick={() => decide(targets(), { status: "resolved" })} disabled={!targets().length}>
-          Resolve{selected.size ? ` ${selected.size} selected` : ""}
-        </button>
-        <button type="button" onClick={() => decide(targets(), { status: "dismissed" })} disabled={!targets().length}>
-          Dismiss{selected.size ? ` ${selected.size} selected` : ""}
-        </button>
-        <button type="button" onClick={() => decide(targets(), { status: "open" })} disabled={!targets().length}>
-          Reopen{selected.size ? ` ${selected.size} selected` : ""}
-        </button>
-        {selected.size > 0 && (
-          <button type="button" onClick={() => setSelected(new Set())}>
-            Clear selection
-          </button>
+      <div className={`bulk-bar${n ? " shown" : ""}`} aria-live="polite">
+        {n > 0 ? (
+          <>
+            <span>{plural(n, "issue")} selected:</span>
+            <button type="button" onClick={() => decide(targets(), { status: "resolved" })}>
+              Fixed {n} selected
+            </button>
+            <button type="button" onClick={() => decide(targets(), { status: "dismissed" })}>
+              Dismiss {n} selected
+            </button>
+            <button type="button" onClick={() => decide(targets(), { status: "open" })}>
+              Reopen {n} selected
+            </button>
+            <button type="button" className="link" onClick={() => setSelected(new Set())}>
+              Clear selection
+            </button>
+          </>
+        ) : (
+          <span className="muted">Tick several to decide them together.</span>
         )}
         <audio ref={audio} controls aria-label="Issue audio" onEnded={() => setPlaying(null)} />
       </div>
-      <p className="muted" id="issue-keys">
-        Keys: ↑/↓ or j/k move · Space play (±3 s) · r resolve · d dismiss · o reopen · n note · x select · s shorten a pause
-      </p>
 
       {data && (
         <p className="muted">
           {plural(shown.length, "issue")} shown
-          {shown.length !== data.issues.length ? ` of ${data.issues.length}` : ""}
+          {shown.length !== scoped.length ? ` of ${scoped.length}` : ""}
+        </p>
+      )}
+      {data && shown.length === 0 && (
+        <p className="empty">
+          {filter.status === "open" && scoped.length
+            ? "Nothing left to review here."
+            : scoped.length
+              ? "Nothing with this status."
+              : "No mistakes or long pauses found."}
         </p>
       )}
       {shown.length > 0 && (
-        <table className="issue-table" onKeyDown={onKeyDown} aria-describedby="issue-keys">
+        <table className="issue-table issue-cards" onKeyDown={onKeyDown} aria-describedby="issue-keys">
           <caption className="visually-hidden">Issues</caption>
-          <thead>
+          <thead className="visually-hidden">
             <tr>
-              <th scope="col">
-                <span className="visually-hidden">Selected</span>
-              </th>
-              <th scope="col">Type</th>
-              <th scope="col">Severity</th>
+              <th scope="col">Selected</th>
+              <th scope="col">Listen</th>
               <th scope="col">Page</th>
-              <th scope="col">Where</th>
-              <th scope="col">Expected / heard</th>
-              <th scope="col">Status</th>
-              <th scope="col">Note</th>
+              <th scope="col">What</th>
+              <th scope="col">Decision</th>
             </tr>
           </thead>
           <tbody>
@@ -292,11 +316,11 @@ export function IssuesPanel({ checks, canRun, revision, onEdited, onError }: Pro
                   tabIndex={i.id === (current?.id ?? shown[0]?.id) ? 0 : -1}
                   aria-current={i.id === current?.id ? "true" : undefined}
                   aria-selected={selected.has(i.id)}
-                  className={`sev-${i.severity} st-${i.status}`}
+                  className={`sev-${i.severity} st-${i.status} kind-${i.kind}`}
                   onFocus={() => setCurrentId(i.id)}
                   onClick={() => setCurrentId(i.id)}
                 >
-                  <td>
+                  <td className="pick">
                     <input
                       type="checkbox"
                       aria-label={`Select ${KIND_LABELS[i.kind]} at ${where(i)}`}
@@ -304,48 +328,35 @@ export function IssuesPanel({ checks, canRun, revision, onEdited, onError }: Pro
                       onChange={() => toggle(i.id)}
                     />
                   </td>
-                  <td>{KIND_LABELS[i.kind]}</td>
-                  <td>{SEVERITY_LABELS[i.severity]}</td>
-                  <td>{i.page_label ?? "—"}</td>
-                  <td>
+                  <td className="listen">
                     {i.start !== null ? (
                       <button
                         type="button"
-                        className="link"
+                        className="play"
                         onClick={() => play(i)}
                         aria-label={`Play ${where(i)}`}
                       >
-                        {playing === i.id ? "■ " : "▶ "}
-                        {where(i)}
+                        {playing === i.id ? "■" : "▶"}
                       </button>
-                    ) : (
-                      where(i)
-                    )}
+                    ) : null}
                   </td>
-                  <td>
+                  <td className="page-cell">{i.page_label ? `p. ${i.page_label}` : "—"}</td>
+                  <td className="what">
+                    <div className="issue-head">
+                      <span className={`chip chip-${i.kind}`}>{KIND_LABELS[i.kind]}</span>
+                      {i.severity === "low" && <span className="chip chip-check">{SEVERITY_LABELS.low}</span>}
+                      {change && <span className={`badge change-${i.change}`}>{change}</span>}
+                      <span className="muted where">{where(i)}</span>
+                    </div>
                     {i.kind !== "silence" && <div className="expected">{i.expected}</div>}
                     {i.kind === "flub" && <div className="heard">Heard: {i.heard || "—"}</div>}
                     {i.kind === "silence" && i.sentence_text && <div className="muted">After: {i.sentence_text}</div>}
                     <div className="muted">{summary(i)}</div>
-                    {i.kind === "silence" &&
-                      (shortened.has(i.id) ? (
-                        <div role="status">Shortened to {i.detail.suggested_s ?? 0.6} s. Re-run checks to update.</div>
-                      ) : (
-                        <button type="button" onClick={() => shorten(i)}>
-                          Shorten to {i.detail.suggested_s ?? 0.6} s
-                        </button>
-                      ))}
-                  </td>
-                  <td>
-                    {i.status === "open" ? "Open" : i.status === "resolved" ? "Resolved" : "Dismissed"}
-                    {i.decided_by === "auto" && i.status === "resolved" ? " (auto)" : ""}
-                    {change && <span className={`badge change-${i.change}`}> {change}</span>}
-                  </td>
-                  <td>
                     {editing?.id === i.id ? (
                       <input
                         autoFocus
                         aria-label="Note"
+                        className="note-input"
                         value={editing.draft}
                         onChange={(e) => setEditing({ id: i.id, draft: e.target.value })}
                         onKeyDown={(e) => {
@@ -358,7 +369,42 @@ export function IssuesPanel({ checks, canRun, revision, onEdited, onError }: Pro
                         onBlur={saveNote}
                       />
                     ) : (
-                      i.note
+                      i.note && <div className="note-text">Note: {i.note}</div>
+                    )}
+                  </td>
+                  <td className="decide">
+                    {i.status === "open" ? (
+                      <>
+                        <button type="button" onClick={() => decide([i.id], { status: "resolved" })}>
+                          Fixed
+                        </button>
+                        <button type="button" onClick={() => decide([i.id], { status: "dismissed" })}>
+                          OK as is
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className={`chip chip-${i.status}`}>
+                          {i.status === "resolved" ? "Fixed" : "OK as is"}
+                          {i.decided_by === "auto" && i.status === "resolved" ? " (auto)" : ""}
+                        </span>
+                        <button type="button" className="link" onClick={() => decide([i.id], { status: "open" })}>
+                          Reopen
+                        </button>
+                      </>
+                    )}
+                    {i.kind === "silence" &&
+                      (shortened.has(i.id) ? (
+                        <div role="status">Shortened to {i.detail.suggested_s ?? 0.6} s. Re-run checks to update.</div>
+                      ) : (
+                        <button type="button" onClick={() => shorten(i)}>
+                          Shorten to {i.detail.suggested_s ?? 0.6} s
+                        </button>
+                      ))}
+                    {editing?.id !== i.id && (
+                      <button type="button" className="link" onClick={() => startNote(i)}>
+                        {i.note ? "Edit note" : "Add note"}
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -367,10 +413,24 @@ export function IssuesPanel({ checks, canRun, revision, onEdited, onError }: Pro
           </tbody>
         </table>
       )}
+      <details className="keys">
+        <summary>Keyboard shortcuts</summary>
+        <p className="muted" id="issue-keys">
+          ↑/↓ or j/k move · Space play (with 3 s either side) · r fixed · d OK as is · o reopen · n note · x select · s
+          shorten a pause
+        </p>
+      </details>
       <SilenceSettings onError={onError} />
     </section>
   );
 }
+
+const STATUS_TABS: [IssueStatus | "all", string][] = [
+  ["open", "To review"],
+  ["resolved", "Fixed"],
+  ["dismissed", "OK as is"],
+  ["all", "All"],
+];
 
 function Choice<T extends string>({
   label,

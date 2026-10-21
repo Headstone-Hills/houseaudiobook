@@ -9,7 +9,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
-from hillaudio import issue_store
+from hillaudio import edit_report, issue_store
 from hillaudio.analysis.cleanup import CleanupSettings
 from hillaudio.api.jobs import TERMINAL
 from hillaudio.api.state import EngineState, engine
@@ -187,6 +187,12 @@ def redo(state: State) -> dict[str, Any]:
     if store.redo(p) is None:
         raise HTTPException(409, "nothing to redo")
     return _edl(p)
+
+
+@router.get("/api/project/edit-check")
+def edit_check(state: State) -> dict[str, Any]:
+    """Lines read in full that the edit no longer plays, or plays only in part (D-061)."""
+    return edit_report.report(state.require_project())
 
 
 @router.get("/api/project/edl/history")

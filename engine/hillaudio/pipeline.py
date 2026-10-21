@@ -10,7 +10,7 @@ envelopes in cache/envelope/.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any
 
 import numpy as np
@@ -20,6 +20,7 @@ from hillaudio.analysis import cleanup as cl
 from hillaudio.analysis import compare as cmp
 from hillaudio.analysis import takes as tk
 from hillaudio.analysis.boundaries import Envelope, EnvelopeBuilder, speech_mask
+from hillaudio.analysis.issues import unrecorded
 from hillaudio.asr import cache as asr_cache
 from hillaudio.asr.base import Transcriber, TranscriptWord
 from hillaudio.edl import store as edl_store
@@ -299,7 +300,10 @@ def cleanup(
                 )
             ]
         mine = [r for r in readings if r.source_id == src.id]
-        found += cl.cuts(src.id, src.sha256, sents, mine, gaps, words, mask, env.fps, s)
+        # A pickup plays only its placed takes: asides and false starts in it are
+        # off the timeline anyway; only stutters inside a take matter (D-062).
+        mine_s = replace(s, false_starts=False, commentary=False) if src.role == "pickup" else s
+        found += cl.cuts(src.id, src.sha256, sents, mine, gaps, words, mask, env.fps, mine_s)
     return edl_store.apply_cleanup(project, run_id, found, s)
 
 
@@ -337,8 +341,9 @@ def takes(
         cut=cut,
         levels=levels,
         settings=issue_store.settings(project),
+        pickups=frozenset(s.id for s in sources if s.role == "pickup"),
     )
-    return take_store.apply_detection(project, run_id, found)
+    return take_store.apply_detection(project, run_id, found, compare_run)
 
 
 # -- results -------------------------------------------------------------------------------------
@@ -402,6 +407,10 @@ def comparison(project: Project, run_id: int) -> dict[str, Any]:
                 "diffs": json.loads(r["diffs_json"]),
             }
         )
+    # Text no recording reaches yet is "not recorded", not "not read" (see unrecorded).
+    sents = issue_store.sentence_infos(project)
+    unit_ordinal = {u["id"]: u["ordinal"] for u in units}
+    not_recorded = unrecorded(sents, (unit_ordinal[uid] for uid in by_unit if uid in unit_ordinal))
     sentences_out = []
     for u in units:
         rs = by_unit.get(u["id"], [])
@@ -416,6 +425,7 @@ def comparison(project: Project, run_id: int) -> dict[str, Any]:
                 "page_end_label": u["page_end_label"],
                 "readings": rs,
                 "best_score": best["score"] if best else None,
+                "recorded": u["ordinal"] not in not_recorded,
             }
         )
     return {

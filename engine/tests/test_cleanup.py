@@ -199,3 +199,26 @@ def test_transcript_only_repeats() -> None:
     (s,) = repeat_cuts(0, "k", words, m, fps)
     e = truth("stutter")[0][1]
     assert abs(s.start - e["start"]) < 0.06 and abs(s.end - e["end"]) < 0.06
+
+
+def test_an_aside_with_no_duration_is_not_cut() -> None:
+    """Regression: the recognizer gave an aside's 8 words one timestamp, right where
+    the next line starts. Snapping the cut's start to the speech onset carried it
+    past its end, and storing the backwards cut failed the whole analysis
+    ("CHECK constraint failed: end_sample >= start_sample")."""
+    import numpy as np
+
+    from hillaudio.analysis.issues import SentenceInfo
+
+    fps = 100.0
+    mask = np.zeros(400, dtype=bool)
+    mask[160:300] = True  # silence until 1.6 s, then the line
+    line = SentenceInfo(0, 0, "A large man with a beard.", "1", 1, 1)
+    reading = ReadingInfo(0, 0, 1.0, 3.0, 1.0, 1.0, "a large man with a beard", ())
+    aside = Gap(1.0, 1.0, "Well, I'm gonna just do this in")
+    words = [TWord(t, 1.0, 1.0) for t in aside.text.split()]
+    said = ["a", "large", "man", "with", "a", "beard"]
+    words += [TWord(t, 1.6 + 0.2 * i, 1.75 + 0.2 * i) for i, t in enumerate(said)]
+    found = cuts(0, "k", [line], [reading], [aside], words, mask, fps, SETTINGS)
+    assert [c for c in found if c.kind == "commentary"] == []
+    assert all(c.end > c.start for c in found)
