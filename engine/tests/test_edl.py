@@ -222,3 +222,11 @@ def test_layout_free_clips_and_solo() -> None:
     hi = SourceInfo(4, 48000, 48000)
     (c,) = layout([hi], [], 16000, [], [FreeClip(1, 2, 4, 0, 48000, 100)])[-1:]
     assert (c.timeline_start, c.timeline_end) == (100, 16100)
+
+
+def test_mono_in_a_stereo_mix_keeps_its_level() -> None:
+    """Regression: ffmpeg's mono-to-stereo upmix is 3 dB down per side."""
+    inp, full = fixture("ch01_take2.wav")
+    got = read(inp, 1000, 500, inp.sample_rate, 2)
+    np.testing.assert_array_equal(got[:, 0], full[1000:1500, 0])
+    np.testing.assert_array_equal(got[:, 1], full[1000:1500, 0])

@@ -58,7 +58,10 @@ def read(inp: Input, start: int, n: int, rate: int, channels: int) -> Audio:
         # (Not "-ss 0": for MP3 that changes how the encoder delay is skipped.)
         cmd += ["-ss", str(coarse)]
     cmd += ["-i", str(inp.path)]
-    cmd += ["-f", "f32le", "-acodec", "pcm_f32le", "-ac", str(channels), "-ar", str(rate)]
+    # Mono into a stereo mix: read mono and copy it to both sides (ffmpeg's own
+    # upmix lowers each side by 3 dB).
+    ac = 1 if inp.channels == 1 else channels
+    cmd += ["-f", "f32le", "-acodec", "pcm_f32le", "-ac", str(ac), "-ar", str(rate)]
     # Read a little past what's needed, then cut exactly.
     cmd += ["-t", f"{(skip + n) / rate + 0.05:.6f}", "-"]
     proc = subprocess.run(cmd, capture_output=True, check=False)
@@ -66,8 +69,8 @@ def read(inp: Input, start: int, n: int, rate: int, channels: int) -> Audio:
         err = proc.stderr.decode(errors="replace").strip()[:200]
         raise RuntimeError(f"ffmpeg failed to decode {inp.path.name}: {err}")
     data = np.frombuffer(proc.stdout, dtype=np.float32)
-    data = data[: len(data) - len(data) % channels].reshape(-1, channels)[skip : skip + n]
-    out[: len(data)] = data
+    data = data[: len(data) - len(data) % ac].reshape(-1, ac)[skip : skip + n]
+    out[: len(data)] = data  # (n, 1) broadcasts to every channel
     return out
 
 
@@ -77,6 +80,8 @@ def _joins(prev: Clip, nxt: Clip, inp: Input, rate: int) -> int:
     has its own shape."""
     if prev.source_id != nxt.source_id or prev.track_id != nxt.track_id:
         return 0
+    if prev.source_out == nxt.source_in:
+        return 0  # a split: the audio simply continues, so there's nothing to blend
     if inp.sample_rate != rate or prev.fade_out or nxt.fade_in or prev.muted or nxt.muted:
         return 0  # resampled sources join without a blend (D-041)
     # Room on both sides of both edges, inside the recording and the clips.

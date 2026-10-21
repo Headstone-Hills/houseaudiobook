@@ -35,6 +35,7 @@ from hillaudio.store.project import Origin, Project, now_iso
 EDIT_OPS = (
     "cleanup_apply",
     "takes_detect",
+    "timeline_edit",
     "take_choice",
     "region_status",
     "region_edit",
@@ -139,7 +140,7 @@ def timeline(project: Project) -> Timeline:
 # -- the edit primitive ------------------------------------------------------------------
 
 
-TABLES = ("edit_region", "take_group", "take")
+TABLES = ("edit_region", "take_group", "take", "track", "edl_clip", "marker")
 # A change is (table, row before, row after); None means "no such row". The
 # timeline order is one value: ("edl_segment", segments before, segments after).
 Change = tuple[str, Any, Any]

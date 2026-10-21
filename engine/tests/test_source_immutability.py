@@ -175,8 +175,8 @@ def test_m3_m4_analysis_leaves_sources_untouched(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Transcribe, Compare to Text, cleanup, takes, the issue checks, decisions,
-    edits, undo/redo, excerpts and renders only read the sources (one referenced
-    in place)."""
+    edits, the timeline tools, undo/redo, excerpts and renders only read the
+    sources (one referenced in place)."""
     from fakeasr import FakeTranscriber
 
     monkeypatch.setenv("HILLAUDIO_HOME", str(tmp_path / "home"))
@@ -244,4 +244,18 @@ def test_m3_m4_analysis_leaves_sources_untouched(
             c.post(f"/api/project/takes/{g['id']}/back")
         r = c.get("/api/project/edl/render", params={"start": 10, "end": 40})
         assert r.status_code == 200
+        # M7: the timeline tools, a second track, then a stereo preview render.
+        c.post("/api/project/timeline/split", json={"t": 3.0})
+        c.post("/api/project/timeline/ripple-delete", json={"start": 1.0, "end": 1.2})
+        tracks = c.post("/api/project/timeline/tracks", json={"name": "Room"}).json()["tracks"]
+        room = tracks[-1]["id"]
+        c.post(f"/api/project/timeline/tracks/{room}/add-source", json={"source_id": 1, "t": 0})
+        c.patch(f"/api/project/timeline/tracks/{room}", json={"pan": -0.5, "gain_db": -12})
+        clip = c.get("/api/project/timeline").json()["clips"][0]
+        c.post(
+            "/api/project/timeline/clip", json={"ref": clip["ref"], "gain_db": 2, "fade_in": 0.1}
+        )
+        r = c.get("/api/project/edl/render", params={"start": 0, "end": 30})
+        assert r.status_code == 200
+        c.get("/api/project/timeline/lanes", params={"start": 0, "end": 60})
     assert {p: fingerprint(p) for p in originals} == before

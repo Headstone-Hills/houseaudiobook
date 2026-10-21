@@ -227,9 +227,11 @@ def place(
     a: int,
     b: int,
     before: tuple[int, int] | None = None,
+    at_end: bool = False,
 ) -> list[Segment]:
     """Move [a, b) of a recording so it plays just before `before` = (source,
-    sample); None puts it back where it naturally belongs in its own recording."""
+    sample), or last (`at_end`); otherwise back where it naturally belongs in
+    its own recording."""
     home = _covering(segs, source_id, a)
     attrs = segs[home] if home is not None else None
     rest = _without(segs, source_id, a, b)
@@ -241,8 +243,8 @@ def place(
         attrs.gain_db if attrs else 0.0,
         muted=attrs.muted if attrs else False,
     )
-    at: int | None = None
-    if before is not None:
+    at: int | None = len(rest) if at_end else None
+    if before is not None and not at_end:
         bs, x = before
         for i, s in enumerate(rest):
             if s.source_id == bs and s.source_in <= x < s.source_out:

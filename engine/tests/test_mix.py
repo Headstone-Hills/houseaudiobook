@@ -144,3 +144,12 @@ def test_partial_renders_match(t0: int, t1: int) -> None:
     full, _ = mix(segs, frees, [Region(1, 1, 2000, 2300, "removed")], tracks, 2)
     part, _ = mix(segs, frees, [Region(1, 1, 2000, 2300, "removed")], tracks, 2, t0, t1)
     np.testing.assert_array_equal(part, full[t0:t1])
+
+
+def test_a_split_join_is_not_blended() -> None:
+    """Regression: a split made a crossfade of the audio with itself (tiny but
+    not exact). Contiguous audio across a join plays as it is."""
+    from hillaudio.edl.model import split
+
+    out, _ = mix(split([Segment(1, 0, 5000), Segment(2, 0, 3000)], 1, 2000))
+    np.testing.assert_array_equal(out[:, 0], np.concatenate([AUDIO[1], AUDIO[2]]))

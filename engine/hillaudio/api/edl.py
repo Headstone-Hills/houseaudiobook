@@ -13,7 +13,7 @@ from hillaudio import issue_store
 from hillaudio.analysis.cleanup import CleanupSettings
 from hillaudio.api.jobs import TERMINAL
 from hillaudio.api.state import EngineState, engine
-from hillaudio.edl import store
+from hillaudio.edl import store, timeline_store
 from hillaudio.edl.model import Clip, duration, to_timeline
 from hillaudio.edl.render import Input, render, wav_bytes
 from hillaudio.store.project import Project
@@ -218,26 +218,26 @@ def render_range(
     if end <= start:
         raise HTTPException(400, "end must be after start")
     end = min(end, start + MAX_PREVIEW_S)
-    tl = store.timeline(p)
+    st = timeline_store.load(p)
     inputs = {}
     for s in p.sources():
         path = p.resolve(s)
         if not path.is_file():
             raise HTTPException(409, f"{s.label} is missing; relink it first")
         inputs[s.id] = Input(path, s.sample_rate, s.channels, s.num_frames)
-    channels = max((s.channels for s in inputs.values()), default=1)
-    t0 = round(start * tl.rate)
-    t1 = min(round(end * tl.rate), duration(tl.clips))
+    channels = timeline_store.mix_channels(st)
+    t0 = round(start * st.rate)
+    t1 = min(round(end * st.rate), duration(st.clips))
     if t1 <= t0:
         raise HTTPException(400, "that range is past the end of the timeline")
     try:
-        audio = render(tl.clips, inputs, tl.rate, channels, t0, t1)
+        audio = render(st.clips, inputs, st.rate, channels, t0, t1, tracks=st.tracks)
     except RuntimeError as e:
         raise HTTPException(500, str(e)) from None
     return Response(
-        wav_bytes(audio, tl.rate),
+        wav_bytes(audio, st.rate),
         media_type="audio/wav",
-        headers={"X-Render-Start": f"{t0 / tl.rate:.6f}", "X-Render-End": f"{t1 / tl.rate:.6f}"},
+        headers={"X-Render-Start": f"{t0 / st.rate:.6f}", "X-Render-End": f"{t1 / st.rate:.6f}"},
     )
 
 
