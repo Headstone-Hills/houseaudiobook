@@ -171,6 +171,33 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX issue_kind ON issue (kind, status);
     """,
+    # 5: the narration EDL as removed regions (M5, D-038). Positions are integer
+    # samples at the source's rate. Every change is an operation_log entry with
+    # the rows before and after, which undo/redo replays.
+    """
+    CREATE TABLE edit_region (
+        id             INTEGER PRIMARY KEY,
+        source_file_id INTEGER NOT NULL REFERENCES source_file(id),
+        start_sample   INTEGER NOT NULL,
+        end_sample     INTEGER NOT NULL,
+        kind           TEXT NOT NULL
+                       CHECK (kind IN ('stutter', 'false_start', 'commentary', 'pause', 'cut')),
+        status         TEXT NOT NULL CHECK (status IN ('removed', 'restored', 'suggested')),
+        origin         TEXT NOT NULL CHECK (origin IN ('auto', 'user')),
+        decided_by     TEXT NOT NULL CHECK (decided_by IN ('auto', 'user')),
+        confidence     REAL,
+        reason         TEXT NOT NULL,
+        text           TEXT NOT NULL,
+        stable_key     TEXT UNIQUE,
+        issue_id       INTEGER REFERENCES issue(id) ON DELETE SET NULL,
+        run_id         INTEGER REFERENCES analysis_run(id),
+        detail_json    TEXT NOT NULL,
+        created_at     TEXT NOT NULL,
+        updated_at     TEXT NOT NULL,
+        CHECK (end_sample >= start_sample)
+    );
+    CREATE INDEX edit_region_source ON edit_region (source_file_id, start_sample);
+    """,
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

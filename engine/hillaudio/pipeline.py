@@ -1,9 +1,10 @@
 """The analysis pipeline's I/O around the pure analysis code (SPEC §6.3).
 
-Stages so far (M4): Transcribe, Compare to Text, then the checks that flag
-issues (flubs and unread lines; overlong silences). Each run is recorded in
-`analysis_run`. Expensive results are cached by file hash + settings (CLAUDE.md):
-transcripts in cache/transcripts/, energy envelopes in cache/envelope/.
+Stages so far (M5): Transcribe, Compare to Text, Cleanup (cuts as EDL regions),
+then the checks that flag issues (flubs and unread lines; overlong silences).
+Each run is recorded in `analysis_run`. Expensive results are cached by file
+hash + settings (CLAUDE.md): transcripts in cache/transcripts/, energy
+envelopes in cache/envelope/.
 """
 
 from __future__ import annotations
@@ -15,15 +16,18 @@ from typing import Any
 import numpy as np
 
 from hillaudio import issue_store
+from hillaudio.analysis import cleanup as cl
 from hillaudio.analysis import compare as cmp
 from hillaudio.analysis.boundaries import Envelope, EnvelopeBuilder, speech_mask
 from hillaudio.asr import cache as asr_cache
 from hillaudio.asr.base import Transcriber, TranscriptWord
+from hillaudio.edl import store as edl_store
 from hillaudio.ingest.decode import iter_blocks
 from hillaudio.progress import Cancelled, CheckCancel, Progress, never_cancel, no_progress
 from hillaudio.store.project import Project, Source, now_iso
 
-STAGES = ("transcribe", "compare_text", "flubs", "silences")
+# Cleanup runs before the checks, so they see the edited timeline (SPEC §6.7).
+STAGES = ("transcribe", "compare_text", "cleanup", "flubs", "silences")
 # Issue kinds each checking stage produces (and so may auto-resolve).
 STAGE_KINDS = {"flubs": ["flub", "missing_line"], "silences": ["silence"]}
 ENVELOPE_KEY = "env-v1-10ms"
@@ -188,12 +192,17 @@ def run_analysis(
         compare_run = latest_run(project)
         if compare_run is None or is_stale(project, compare_run):
             raise PipelineError("flagging flubs needs an up-to-date Compare to Text; run it first")
-    if "silences" in stages and "compare_text" not in stages and compare_run is None:
-        # Used for context (sentence/paragraph/chapter thresholds) when current.
+    if (
+        ("silences" in stages or "cleanup" in stages)
+        and "compare_text" not in stages
+        and compare_run is None
+    ):
+        # Used when current: for pause context, and for cleanup (else cleanup
+        # falls back to repeats in the transcript alone, D-040).
         last = latest_run(project)
         compare_run = last if last is not None and not is_stale(project, last) else None
 
-    if "compare_text" in stages and "transcribe" not in stages:
+    if {"compare_text", "cleanup"} & set(stages) and "transcribe" not in stages:
         missing = [s.label for s in sources if not transcript(project, s.id)]
         if missing:
             raise PipelineError(f"no transcript yet for {', '.join(missing)}; transcribe first")
@@ -232,6 +241,9 @@ def run_analysis(
                 unaligned += len(c.unaligned)
             summary |= {"readings": readings, "unaligned": unaligned}
             compare_run = run_id
+        if "cleanup" in stages:
+            progress(0.95, "finding stutters, false starts and commentary")
+            summary["cleanup"] = cleanup(project, run_id, compare_run, check_cancel)
         kinds = [k for s in stages for k in STAGE_KINDS.get(s, [])]
         if kinds:
             progress(0.97, "checking for issues")
@@ -245,6 +257,43 @@ def run_analysis(
         raise
     finally:
         finish_run(project, run_id, status)
+
+
+# -- cleanup ----------------------------------------------------------------------------------
+
+
+def cleanup(
+    project: Project,
+    run_id: int,
+    compare_run: int | None,
+    check_cancel: CheckCancel = never_cancel,
+) -> dict[str, int]:
+    """Cleanup candidates for every source, applied as EDL regions (D-040)."""
+    s = edl_store.settings(project)
+    sents = issue_store.sentence_infos(project) if compare_run is not None else []
+    readings = issue_store.reading_infos(project, compare_run) if compare_run is not None else []
+    found: list[cl.Cut] = []
+    for src in project.sources():
+        check_cancel()
+        words = [cl.TWord(w.text, w.start, w.end) for w in transcript(project, src.id)]
+        env = envelope(project, src, check_cancel)
+        mask = speech_mask(env)
+        if compare_run is None:
+            if s.stutters:
+                found += cl.repeat_cuts(src.id, src.sha256, words, mask, env.fps)
+            continue
+        with project.db() as conn:
+            gaps = [
+                cl.Gap(r["start"], r["end"], r["text"])
+                for r in conn.execute(
+                    'SELECT start, "end", text FROM unaligned_segment'
+                    " WHERE run_id = ? AND source_file_id = ? ORDER BY start",
+                    (compare_run, src.id),
+                )
+            ]
+        mine = [r for r in readings if r.source_id == src.id]
+        found += cl.cuts(src.id, src.sha256, sents, mine, gaps, words, mask, env.fps, s)
+    return edl_store.apply_cleanup(project, run_id, found, s)
 
 
 # -- results -------------------------------------------------------------------------------------

@@ -258,13 +258,33 @@ def text_issues(
 # -- overlong silences ---------------------------------------------------------------------
 
 
-def pauses(mask: Mask, fps: float) -> list[tuple[float, float]]:
-    """Silent stretches between speech, in seconds; leading/trailing silence excluded."""
-    speech = np.flatnonzero(mask)
+def pauses(
+    mask: Mask, fps: float, cut: Sequence[tuple[float, float]] = ()
+) -> list[tuple[float, float, float]]:
+    """Silent stretches between speech: (start, end, length) in seconds, leading
+    and trailing silence excluded.
+
+    `cut`: spans removed from the timeline. Pauses are measured as they play
+    (cut audio left out), so cutting a stutter's gap or shortening a pause
+    changes them, while start/end stay positions in the recording.
+    """
+    n = len(mask)
+    keep = np.ones(n, dtype=bool)
+    for a, b in cut:
+        keep[max(0, round(a * fps)) : max(0, round(b * fps))] = False
+    idx = np.flatnonzero(keep)
+    speech = np.flatnonzero(mask[keep])
     if len(speech) == 0:
         return []
     gaps = np.flatnonzero(np.diff(speech) > 1)
-    return [((speech[g] + 1) / fps, speech[g + 1] / fps) for g in gaps]
+    return [
+        (
+            (idx[speech[g]] + 1) / fps,
+            idx[speech[g + 1]] / fps,
+            (speech[g + 1] - speech[g] - 1) / fps,
+        )
+        for g in gaps
+    ]
 
 
 def _boundary(prev: SentenceInfo | None, nxt: SentenceInfo | None) -> str:
@@ -285,20 +305,22 @@ def silence_issues(
     sentences: Sequence[SentenceInfo],
     readings: Sequence[ReadingInfo],
     settings: IssueSettings,
+    cut: Sequence[tuple[float, float]] = (),
 ) -> list[IssueDraft]:
-    """Overlong pauses in one source. `readings`: this source's, for context."""
+    """Overlong pauses in one source. `readings`: this source's, for context;
+    `cut`: this source's spans removed from the timeline (seconds)."""
     by_ord = {s.ordinal: (i, s) for i, s in enumerate(sentences)}
     mine = sorted((r for r in readings if r.source_id == source_id), key=lambda r: r.start)
     slack = 0.25  # readings' snapped edges vs the mask's edges
     out: list[IssueDraft] = []
-    for a, b in pauses(mask, fps):
+    for a, b, length in pauses(mask, fps, cut):
         before = [r for r in mine if r.end <= a + slack]
         after = [r for r in mine if r.start >= b - slack]
         prev = by_ord[before[-1].sentence_ordinal] if before else None
         nxt = by_ord[after[0].sentence_ordinal] if after else None
         boundary = _boundary(prev[1] if prev else None, nxt[1] if nxt else None)
         limit = settings.threshold(boundary)
-        if b - a <= limit:
+        if length <= limit:
             continue
         if prev or nxt:
             ctx = "|".join(sentence_context(sentences, x[0]) if x else "" for x in (prev, nxt))
@@ -321,7 +343,7 @@ def silence_issues(
                 "",
                 "",
                 {
-                    "seconds": round(b - a, 2),
+                    "seconds": round(length, 2),
                     "boundary": boundary,
                     "threshold": limit,
                     # What "shorten" will do in M5: a natural pause for this boundary.

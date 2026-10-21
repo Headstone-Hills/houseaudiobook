@@ -26,6 +26,8 @@ from hillaudio.analysis.issues import (
     silence_issues,
     text_issues,
 )
+from hillaudio.edl import store as edl_store
+from hillaudio.edl.model import kept_seconds, merged
 from hillaudio.progress import CheckCancel, never_cancel
 from hillaudio.store.project import Project, now_iso
 
@@ -119,6 +121,22 @@ def detect(
     s = settings(project)
     sents = sentence_infos(project)
     readings = reading_infos(project, compare_run) if compare_run is not None else []
+    # Check the timeline as edited (SPEC §6.7): what was cut isn't heard.
+    tl = edl_store.timeline(project)
+    cut = {
+        sid: [(a / src.sample_rate, b / src.sample_rate) for a, b in merged(tl.regions, sid)]
+        for sid, src in tl.sources.items()
+    }
+    readings = [
+        r
+        for r in readings
+        if r.source_id not in tl.sources
+        or r.end <= r.start
+        or kept_seconds(
+            tl.regions, r.source_id, tl.sources[r.source_id].sample_rate, r.start, r.end
+        )
+        >= 0.5 * (r.end - r.start)
+    ]
     drafts: list[IssueDraft] = []
     if {"flub", "missing_line"} & set(kinds):
         drafts += [d for d in text_issues(sents, readings, s) if d.kind in kinds]
@@ -128,7 +146,7 @@ def detect(
             env = pipeline.envelope(project, src, check_cancel)
             # Keyed by the source's content hash: survives re-ordering and relabeling.
             drafts += silence_issues(
-                src.id, src.sha256, speech_mask(env), env.fps, sents, readings, s
+                src.id, src.sha256, speech_mask(env), env.fps, sents, readings, s, cut[src.id]
             )
     return drafts
 
