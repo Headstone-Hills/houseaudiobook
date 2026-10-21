@@ -42,6 +42,7 @@ export function RemovedPanel({ revision, onEdited, onError }: Props) {
   const [filter, setFilter] = useState<Filter>("all");
   const [currentId, setCurrentId] = useState<number | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [editedHere, setEditedHere] = useState(false);
   const audio = useRef<HTMLAudioElement>(null);
   const rows = useRef(new Map<number, HTMLTableRowElement>());
   const fail = (e: unknown) => onError(e instanceof Error ? e.message : String(e));
@@ -61,6 +62,7 @@ export function RemovedPanel({ revision, onEdited, onError }: Props) {
     p
       .then((d) => {
         setEdl(d);
+        setEditedHere(true);
         onEdited();
       })
       .catch(fail);
@@ -190,6 +192,11 @@ export function RemovedPanel({ revision, onEdited, onError }: Props) {
         </select>
         <audio ref={audio} controls aria-label="Removed material audio" />
       </div>
+      {editedHere && (
+        <p role="status" className="muted">
+          The timeline changed: re-run checks to update the Issues list.
+        </p>
+      )}
       <p className="muted" id="removed-keys">
         Keys: ↑/↓ or j/k move · Space play as edited · p play what was cut · r restore · a apply · [ ] bring back 50 ms
         at the start/end · , . move the cut 50 ms · ⌘/Ctrl+Z undo · Shift+⌘/Ctrl+Z redo

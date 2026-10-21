@@ -119,6 +119,7 @@ describe("RemovedPanel", () => {
     );
     await waitFor(() => expect(rows()[1]).toHaveTextContent("Restored"));
     expect(onEdited).toHaveBeenCalled();
+    expect(screen.getByText("The timeline changed: re-run checks to update the Issues list.")).toBeInTheDocument();
     fireEvent.keyDown(table, { key: "a" });
     await waitFor(() =>
       expect(calls(fetch, "POST")).toContainEqual(["/api/project/edl/regions/status", { ids: [2], status: "removed" }]),
