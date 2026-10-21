@@ -535,3 +535,68 @@ global alignment:
 - Take cuts appear only in the Takes panel. The Removed Material panel counts
   them but doesn't offer to restore them, since that would play the line twice.
 
+## D-046 · The multitrack model (M7)
+- The **narration track** stays "ordered segments minus removed regions"
+  (D-038, D-043), so cleanup, takes and the checks keep working unchanged.
+  - Segments carry clip attributes: gain, fade in/out (source samples, at the
+    first/last clip of the segment), mute, and a split mark that keeps two
+    pieces apart.
+  - `normalize` merges neighbours only when the audio continues and the
+    attributes match, so undo-all returns to the default.
+- **Other tracks** hold free clips (`edl_clip`, SPEC §4) at fixed timeline
+  positions. They don't ripple with narration edits, as in Audacity.
+- Moving a narration clip to another track cuts it from the narration (a `cut`
+  region tagged with the new clip). Moving it back restores that region and
+  re-inserts the piece.
+- `layout()` places every clip on every track. The server render and the
+  browser preview both use its output.
+- Markers are anchored to a recording sample (or to a timeline position when
+  placed over empty space), so they move with edits.
+
+## D-047 · The mixer (M7)
+- The render overlap-adds every audible clip, with clip gain, linear fades,
+  track gain and pan.
+  - A narration cut inside one recording keeps its 10 ms crossfade, done as
+    overlap-add with the clip handles.
+  - Contiguous audio (a split) is never blended.
+- Mute and solo: with any track soloed, only soloed tracks play.
+- **Pan uses a balance law.** Left = min(1, 1 - pan), right = min(1, 1 + pan):
+  unity at centre, and the far side fades out.
+  - Why: centre pan must not change the narration's level (no -3 dB), so
+    unedited mixes stay exact.
+  - The output is stereo only when a track is panned (or a source is stereo).
+  - Mono sources are read as mono and copied to both sides; ffmpeg's own upmix
+    is -3 dB per side.
+- Unity gain and centre pan touch no samples: the round trip is exact.
+
+## D-048 · Realtime preview from the EDL (M7)
+- The browser plays `layout()`'s clips with Web Audio.
+  - Each clip is fetched in 10 s chunks, on a fixed grid so re-scheduling
+    reuses them, as excerpts of the original recordings (about 8 s ahead), and
+    decoded in the browser.
+  - The audio-node chain is source -> gain (clip x track gain, with the same
+    linear fade breakpoints) -> pan (the D-047 balance law, from
+    splitter/gain/merger nodes; not StereoPanner's equal-power law) -> output.
+- Nothing is rendered in advance, so an edit is heard on the next Play.
+- The preview leaves out the 10 ms join crossfades. "Render preview" (P) plays
+  the server's exact mix of the selection (≤ 60 s).
+
+## D-049 · Timeline interaction (M7)
+- Keyboard first (CLAUDE.md): every tool has a key, listed in the panel.
+  The canvas is one focusable `role="application"` region with a live status
+  line.
+  - Playhead: Space, ←/→ (Shift ×10), Alt+←/→ snap, Home/End.
+  - Clips and tracks: Tab/Shift+Tab clip, ↑/↓ track.
+  - Editing: [ ] selection, Delete ripple delete, S split, Shift+[ ] trim to
+    the playhead, , . roll, Alt+Shift+←/→ move to snap, Alt+↑/↓ move to track.
+  - Clip attributes: +/− gain, F/G fades, U mute clip.
+  - Tracks and markers: Shift+U/Shift+S track mute/solo, M marker, T track.
+  - Shift+R restores the cut at the playhead; P renders a preview.
+  - View: Z/Shift+Z zoom, 0 fit, N snap on/off; ⌘/Ctrl+Z undo.
+- Edits go through a queue, and each is built from the latest state, so quick
+  repeats compose.
+- Drops are ripple inserts: on the narration, a moved clip plays just before
+  the audio under the drop point (as positioned before the move).
+- Waveforms use the peak level whose bucket fits one pixel at the current
+  zoom, fetched in 8192-bucket chunks as they come into view (SPEC §8).
+

@@ -234,45 +234,50 @@ Risks:
 - The "later take" tie-break is a convention, not a measurement. Such groups are flagged "listen and confirm".
 - A pickup's own leading room tone stays at its file's home position, so a short silence may sit between files.
 
-## M7 · Timeline editor: in progress
+## M7 · Timeline editor: done (2026-10-21)
 
-Plan:
-1. **Model (`edl/model.py`, pure).** This completes D-038/D-043.
-   - The **narration track** stays "ordered segments minus removed regions" (cleanup and takes keep working). Segments gain clip attributes: gain, fade in/out, mute, and a split mark.
-   - **Other tracks** (alternates, room tone, notes...) hold free clips at fixed timeline positions.
-   - Tracks have gain, pan, mute and solo.
-   - One pure `layout()` turns all of it into placed clips. Both the server render and the browser preview use it, so they can't disagree.
-2. **Edits**, all undoable entries (D-039):
-   - split at the playhead;
-   - trim (ripple) and rolling edits;
-   - move: within the narration (ripple insert), on other tracks (free), and between tracks;
-   - ripple-delete a selection;
-   - fade in/out, clip gain, clip mute;
-   - track gain/pan/mute/solo; add and rename tracks;
-   - markers (anchored to the recording, so they follow edits).
-3. **Schema v7:** `track`, `edl_clip` (SPEC §4), `marker`; segment attributes.
-4. **Render:** mix the tracks with clip gain/fades and track gain/pan (unity at centre), mute and solo. With no edits it is still sample-identical (the round-trip test).
-5. **API:**
-   - the timeline (tracks, clips, markers, issue markers, removed regions);
-   - windowed lanes for words, sentences and pauses (transcript lane and snapping, mapped to timeline time);
-   - edit endpoints.
-6. **Web: Timeline panel.**
-   - Canvas lanes with waveforms from the multi-resolution peaks, a ruler, zoom, scroll, playhead and selection.
-   - Lanes for the transcript, removed material (ghosted, restorable) and markers (issues coloured by kind).
-   - Track headers with mute, solo, gain and pan; an inspector for the selected clip.
-   - Mouse: drag to move, drag edges to trim, drag fade handles.
-   - Keyboard for every tool: Space, ←/→, Alt+←/→ snap, [ ] selection, S split, Delete ripple delete, Alt+Shift+←/→ move clip, Shift+[ ] trim, +/- gain, F/G fades, M marker, T track, Tab clip, Z zoom, ⌘/Ctrl+Z undo.
-   - **Realtime preview from the EDL:** Web Audio schedules the placed clips from source excerpts (proxies) with gain/fade/pan nodes, fetched ahead of the playhead. Edits apply without re-rendering.
-7. **Tests.**
-   - Model: split/move/trim/fades/tracks; layout vs render.
-   - Exact gain/fade/pan/mute/solo arithmetic; round trip after undo-all.
-   - Undo/redo of every op; immutability.
-   - UI pure helpers: snapping, schedule, zoom/time mapping, keyboard.
-   - e2e: edit from the keyboard, preview plays from the EDL.
-- **Risks.**
-  - Clips on other tracks don't ripple with narration edits (they are free, as in Audacity).
-  - The browser preview skips the 10 ms join crossfades; "Render preview" is exact.
-  - Canvas UI performance on a 10 h project: peaks by zoom level, and only the visible window is drawn or fetched.
+Acceptance criteria (SPEC §9):
+- [x] **Multitrack** (D-046).
+  - The narration track, plus any number of tracks (alternates, room tone, notes) with free clips.
+  - Per-track gain, pan, mute and solo; add, rename and delete tracks.
+  - Clips move between tracks: off the narration it closes up, and back on it re-inserts.
+- [x] **Trim/split/move/fade/gain**, each one undoable entry:
+  - split at the playhead;
+  - ripple delete of a selection;
+  - trim (ripple), where dragging outward re-exposes cut audio across adjacent cuts;
+  - rolling edit;
+  - move: a ripple insert within the narration, free on other tracks, or across tracks;
+  - linear fade in/out, clip gain and clip mute.
+  - All tested sample-exact, including the round trip: after every kind of edit, undo-all renders the sources exactly.
+- [x] **Snapping:** to words, sentences, pauses (edges and middle), markers, issues and clip edges. Alt+←/→ jumps, and drags snap within 8 px. Words, sentences and pauses come from windowed lanes mapped to timeline time.
+- [x] **Markers:** user markers anchored to the recording, so they follow edits (and disappear if their audio is cut). Open issues are coloured markers by kind. Removed material is a ghosted lane that can be restored from it (Shift+R).
+- [x] **Realtime preview from the EDL** (D-048): Web Audio schedules the placed clips from source excerpts, with clip and track gain, fades and the server's pan law. Edits apply on the next play, with no rendering. "Render preview" plays the exact server mix.
+- [x] **UI:**
+  - Canvas lanes: ruler, markers, tracks with waveforms from the multi-resolution peaks chosen by zoom, removed material, transcript.
+  - Zoom and scroll; track headers; a clip inspector.
+  - Mouse: drag to move, drag edges to trim, drag the top corners for fades, drag the ruler to select.
+  - **A key for every tool** (listed in the panel). Edits are queued, so quick repeats build on each other.
+- [x] Immutability test covers the timeline tools, a second track and a stereo render.
+
+`make check`: 278 engine tests (1 opt-in skipped), 49 web tests. `make e2e`: 7 tests.
+
+Bugs found and fixed, with regression tests:
+- **A split was crossfaded with itself.** The change was tiny (about 1e-9) but not exact; contiguous audio is no longer blended.
+- **Mono lost 3 dB in a stereo mix.** That's ffmpeg's upmix; mono is now read as mono and copied to both sides.
+- **An outward trim stopped at the first of two adjacent cuts.** It now follows the chain.
+- **Preview chunks that began before the playhead started at the wrong offset.**
+- **Two quick "+" presses gave +1 dB.** Each press read the state before the last edit returned.
+- **The timeline view mapped issues and cuts by linear scan.** It now uses binary search: 3,000 lookups on a 10 h timeline in well under 0.5 s.
+
+Deferred:
+- **Live re-scheduling while playing.** An edit is heard from the next Play; seeking during playback restarts it.
+- **The 10 ms join crossfades in the browser preview.** The server render has them.
+- **Free clips rippling with narration edits.** They stay put, as in Audacity.
+- **A visual history panel beyond the edit list** in Removed Material.
+
+Risks:
+- The canvas redraws the visible window on every change; very long zoomed-out views of many clips may need tiling.
+- Preview fetches excerpts from the engine (localhost) about 8 s ahead. On slow disks the first chunk may start late; it joins in at the right offset rather than drifting.
 
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.
