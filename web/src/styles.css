@@ -139,3 +139,13 @@ button.link { background: none; border: none; padding: 0; color: inherit; text-d
 .timeline-canvas canvas { display: block; cursor: crosshair; touch-action: none; }
 .inspector { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin-top: 0.5rem; }
 .inspector input[type="number"] { width: 5rem; }
+
+/* Finalize, export, guide (M8) */
+.finalize .run-row, .export .run-row, .guide .run-row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0; }
+.chain > div { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin: 0.25rem 0; }
+.chain input[type="number"], .finalize .run-row input[type="number"] { width: 5rem; }
+.report { border-collapse: collapse; margin: 0.5rem 0; }
+.report th, .report td { border: 1px solid var(--border); padding: 0.25rem 0.5rem; text-align: left; }
+.report td.pass { color: var(--ok-fg, #15803d); }
+.report td.fail { color: var(--err-fg); font-weight: 600; }
+.preflight ul { margin: 0.25rem 0 0.5rem 1.2rem; }

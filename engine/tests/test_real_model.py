@@ -132,3 +132,14 @@ def test_small_en_finds_exactly_the_injected_errors(client: TestClient, tmp_path
     s04 = by_text["But it was a"]
     pref = next(t for t in s04["takes"] if t["status"] == "preferred")
     assert pref["source_label"] == "ch01_take2" and s04["confident"]
+
+    # M8: chapters found from the real alignment, and the finalized book passes ACX.
+    pf = client.get(
+        "/api/project/export/preflight", params={"format": "mp3", "split": "chapters"}
+    ).json()
+    assert [o["title"][:12] for o in pf["outputs"]] == ["Chapter One.", "Chapter Two."]
+    r = client.post("/api/project/finalize/analyze", json={"split": "chapters"})
+    rep = wait(client, r)["result"]
+    assert rep["pass"], [
+        (f["title"], c) for f in rep["files"] for c in f["checks"] if not c["pass"]
+    ]

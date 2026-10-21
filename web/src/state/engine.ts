@@ -379,6 +379,96 @@ export interface Lanes {
   pauses: { t0: number; t1: number }[];
 }
 
+export interface Preset {
+  key: string;
+  name: string;
+  rms_min_db: number;
+  rms_max_db: number;
+  peak_max_db: number;
+  noise_floor_max_db: number;
+  mp3_min_kbps: number;
+  mp3_sample_rate: number;
+  head_s: number;
+  tail_s: number;
+  max_minutes: number | null;
+  note: string;
+}
+
+export interface FinalizeSettings {
+  preset: string;
+  noise_reduction: boolean;
+  nr_strength: number;
+  nr_reduction_db: number;
+  noise_region: { source_id: number; start: number; end: number } | null;
+  gate: boolean;
+  gate_threshold_db: number;
+  gate_range_db: number;
+  auto_level: boolean;
+  compressor_threshold_db: number;
+  compressor_ratio: number;
+  normalize: boolean;
+  target_rms_db: number;
+  limiter: boolean;
+  ceiling_db: number;
+}
+
+export interface CheckRow {
+  name: string;
+  value: number | boolean;
+  limit: string;
+  pass: boolean;
+}
+
+export interface OutputReport {
+  title: string;
+  file: string | null;
+  seconds: number;
+  levels: { peak_db: number; rms_db: number; noise_floor_db: number; digital_silence: boolean };
+  checks: CheckRow[];
+  pass: boolean;
+  normalize_db: number;
+}
+
+export interface ExportReport {
+  created: string;
+  format: string;
+  split: string;
+  files: OutputReport[];
+  pass: boolean;
+  dir?: string;
+}
+
+export interface FinalizeView {
+  settings: FinalizeSettings;
+  presets: Record<string, Preset>;
+  last_analysis: ExportReport | null;
+}
+
+export type ExportFormat = "wav16" | "wav24" | "mp3";
+export type SplitMode = "single" | "chapters" | "markers";
+
+export interface Preflight {
+  open_issues: Record<string, number>;
+  lossy_sources: string[];
+  missing_sources: string[];
+  outputs: { title: string; seconds: number }[];
+  problems: string[];
+  warnings: string[];
+  last_analysis: ExportReport | null;
+}
+
+export interface GuideRow {
+  n: number;
+  page: string;
+  time: string;
+  recording: string;
+  type: string;
+  expected: string;
+  heard: string;
+  note: string;
+  status: string;
+}
+
 /** Where a manuscript comes from: a local path, an upload, or the project's copy. */
 export type ManuscriptSource = { path: string } | { upload_id: string } | { current: true };
 
@@ -463,6 +553,15 @@ export const api = {
   edl: () => request<Edl>("GET", "/api/project/edl"),
   takes: () => request<TakesResponse>("GET", "/api/project/takes"),
   timeline: () => request<TimelineView>("GET", "/api/project/timeline"),
+  finalize: () => request<FinalizeView>("GET", "/api/project/finalize"),
+  saveFinalize: (s: Partial<FinalizeSettings>) => request<FinalizeView>("PUT", "/api/project/finalize", s),
+  analyze: (split: SplitMode) => request<{ job_id: string }>("POST", "/api/project/finalize/analyze", { split }),
+  preflight: (format: ExportFormat, split: SplitMode) =>
+    request<Preflight>("GET", `/api/project/export/preflight?format=${format}&split=${split}`),
+  exportAudio: (format: ExportFormat, split: SplitMode, kbps: number | null) =>
+    request<{ job_id: string }>("POST", "/api/project/export", { format, split, kbps }),
+  exports: () => request<ExportReport[]>("GET", "/api/project/exports"),
+  guideRows: (q: string) => request<{ header: Record<string, unknown>; rows: GuideRow[] }>("GET", `/api/project/guide/rows?${q}`),
   lanes: (start: number, end: number) =>
     request<Lanes>("GET", `/api/project/timeline/lanes?start=${start.toFixed(3)}&end=${end.toFixed(3)}`),
   tl: <T extends object>(path: string, body: T) =>
@@ -508,6 +607,17 @@ export const api = {
 export function excerptUrl(sourceId: number, start: number, end: number, context?: number): string {
   const ctx = context === undefined ? "" : `&context=${context}`;
   return `/api/project/sources/${sourceId}/excerpt?start=${start.toFixed(3)}&end=${end.toFixed(3)}${ctx}`;
+}
+
+/** A stretch of the timeline through the finalize chain (A/B against renderUrl). */
+export function finalizePreviewUrl(start: number, end: number): string {
+  return `/api/project/finalize/preview?start=${Math.max(0, start).toFixed(3)}&end=${end.toFixed(3)}`;
+}
+
+export function exportFileUrl(file: string): string {
+  // file is "exports/<stamp>/<name>"
+  const [, stamp, name] = file.split("/");
+  return `/api/project/exports/${encodeURIComponent(stamp ?? "")}/${encodeURIComponent(name ?? "")}`;
 }
 
 /** The edited timeline [start, end) seconds, rendered from the sources, as WAV. */

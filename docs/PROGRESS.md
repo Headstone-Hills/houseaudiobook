@@ -279,40 +279,48 @@ Risks:
 - The canvas redraws the visible window on every change; very long zoomed-out views of many clips may need tiling.
 - Preview fetches excerpts from the engine (localhost) about 8 s ahead. On slow disks the first chunk may start late; it joins in at the right offset rather than drifting.
 
-## M8 · Finalize + export: in progress
+## M8 · Finalize + export: done (2026-10-21)
 
-Plan:
-1. **DSP** (`render/dsp.py`, pure numpy, D-050). No pedalboard (GPL, open question 7) and no scipy stack.
-   - Measurement: sample peak, RMS, and noise floor (quietest 0.5 s window), as ACX measures them.
-   - Noise reduction by spectral gating, with a noise profile from a selected room-tone region or the quietest stretch found automatically. Strength is adjustable.
-   - Gate/expander; compressor; clip-level gain riding, so clips and chapters sit at a consistent level; normalization to a target RMS; a look-ahead peak limiter.
-   - All processed in blocks, so a 2-hour chapter never has to be in memory twice.
-2. **Presets** (D-051).
-   - ACX / Audible, as of 2026-10, *verify on acx.com*: RMS -23…-18 dB, peak ≤ -3 dB, noise floor ≤ -60 dB RMS, MP3 ≥ 192 kbps CBR at 44.1 kHz, the same channel format for every file, 1–5 s of room tone at each end, ≤ 120 min per file.
-   - Custom presets.
-   - The chain is stored as project settings and applied at render time on the master bus; sources are never touched.
-3. **Report:** peak, RMS and noise floor per output file, measured on the *encoded* file (decoded back), with pass/fail against the preset. "Analyze" reports on the current timeline before export.
-4. **Export** (a cancellable job).
-   - Formats: WAV 16-bit (TPDF dither) or 24-bit at the project rate; MP3 CBR (selectable bitrate, 44.1 kHz) by ffmpeg/LAME, encoded once from the lossless render.
-   - Single file, or split per chapter (manuscript chapters on the timeline) or at markers. Room-tone head and tail on each file.
-   - **Never lossy→lossy:** MP3 export is refused when the timeline uses MP3 sources (WAV is offered).
-   - Files go to `exports/<date>/`.
-   - A pre-flight summary: unresolved issues, lossy or missing sources, the levels report.
-5. **Narrator corrections guide** (SPEC §6.9).
-   - CSV, Markdown and PDF (reportlab): timestamp, page, expected, heard, type and notes.
-   - Sorted by page or time. Timestamps refer to the original recording or the edited master, selectable and stated in the guide.
-   - A header (project, narrator, date) and counts by type.
-6. **UI:**
-   - Finalize panel: the chain settings, a preset, Analyze with the report, and A/B preview of a selection with and without the chain.
-   - Export panel: pre-flight summary, options, progress, results with per-file reports.
-   - Guide panel. Keyboard reachable throughout.
-7. **Tests.**
-   - DSP on synthetic signals: exact compressor curve, the limiter never exceeds its ceiling, the gate attenuates below threshold, noise reduction lowers a known noise floor while keeping speech RMS within 1 dB, normalization hits its target.
-   - Fixture export passes ACX after finalize, for WAV and MP3 (ffprobe-verified bitrate, rate, CBR).
-   - Lossy sources refused for MP3. Guide contents in all three formats. API, UI, e2e; immutability.
-- **Risks.**
-  - ACX's page couldn't be fetched from this environment; numbers come from its summary in search results and secondary guides. The preset is editable and marked "verify".
-  - Home-made DSP is simpler than commercial tools; quality depends on the room. A/B preview lets the user judge.
+Acceptance criteria (SPEC §9):
+- [x] **Noise reduction:** spectral gating against a room-tone profile (selected, or the quietest second found automatically), with adjustable strength (D-050). On a synthetic test the noise floor drops by more than 8 dB with speech RMS within 1 dB.
+  - On the fixtures it is what makes ACX pass: normalizing them from -25.5 dB to -20 dB RMS would lift the -65 dB noise floor past -60. The report flags this when noise reduction is off (tested).
+- [x] **Auto-level:**
+  - clip-level gain riding toward the narration's median level (±6 dB max), so takes and chapters match;
+  - a gentle soft-knee compressor;
+  - an optional gate/expander;
+  - normalization to the target RMS;
+  - a look-ahead limiter that never exceeds its ceiling.
+  - The chain is project settings, applied at render time (nothing baked in), with an A/B preview of any stretch.
+- [x] **Loudness presets with a pass/fail report.**
+  - The ACX/Audible preset is dated 2026-10, marked "verify on acx.com", and holds RMS -23…-18 dB, peak ≤ -3 dB, noise floor ≤ -60 dB RMS, 192 kbps+ CBR MP3 at 44.1 kHz, 1–5 s room tone at each end, and ≤ 120 min per file. Custom presets can be added.
+  - The report covers peak, RMS, noise floor, digital silence, length, bitrate and sample rate per file, measured on the file *as written* (decoded back, D-052).
+- [x] **WAV/MP3 export.**
+  - WAV 16-bit (TPDF dither) or 24-bit; MP3 CBR via LAME, encoded once from the lossless render.
+  - Single file, per chapter (found from the manuscript alignment) or per marker section, with room tone at the head and tail.
+  - Pre-flight lists unresolved issues, lossy or missing sources, files and lengths, and the last levels check.
+  - MP3 from MP3 recordings is refused (lossy to lossy).
+  - The fixture book passes ACX as MP3 (44.1 kHz, 192 kbps, mono) and as 24-bit WAV per chapter. With real small.en, the chapters are found and the book passes ACX.
+- [x] **Narrator guide:** PDF, CSV and Markdown, with page, time, recording, type, expected, heard and notes (D-053).
+  - Sorted by page or time. Times refer to the original recordings or the edited master, as chosen and stated in the guide.
+  - Header with project, narrator and date, plus counts by type.
+- [x] Immutability: finalize, exports and the guide leave the sources unchanged, and nothing is written beside a referenced recording.
+
+`make check`: 293 engine tests (1 opt-in skipped), 54 web tests. `make e2e`: 8 tests.
+
+Bugs found and fixed, with regression tests:
+- Limiter blocks that didn't start on its 1 ms frame grid differed from one pass; blocks are now aligned (`block_quantum`).
+- Export file names doubled and kept underscores from punctuation.
+
+Deferred:
+- LUFS and true-peak measurement. ACX uses RMS and sample peak; LUFS needs K-weighting filters (adding it would mean scipy or our own biquads).
+- Picking the room-tone region on the timeline (the API takes it; the UI shows the automatic choice).
+- Opening/closing credits and retail sample files (ACX asks for them; they're regular exports of chosen ranges).
+- Background export resumption after a crash: an interrupted export leaves no partial folder, and is simply run again.
+
+Risks:
+- The DSP is deliberately simple. Noise reduction can sound watery on hard noise; strength and an A/B preview are the guard.
+- The ACX numbers are unverified at the source (open question 10).
+- Long single-file exports are limited by temp disk (pass 1 writes float32: about 600 MB per hour at 44.1 kHz mono).
 
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.
@@ -322,5 +330,7 @@ Defaults are assumed until answered; none blocks M1.
 4. Guide timestamps reference original recordings, edited master, or both? *Assumed: selectable, default original recording.*
 5. Minimum macOS version; Apple Silicon only or Intel too? *Affects D-007 (mlx) and M9.*
 6. MIDI / music-bed track ever needed? *Assumed: no (SPEC §2 non-goal).*
-7. **pedalboard is GPL-3.0.** Accept GPL terms for the shipped app, or implement compressor/limiter/gate ourselves (numpy) or with ffmpeg filters? Needed before M8.
+7. ~~pedalboard is GPL-3.0.~~ *Resolved in M8 without needing a decision: the DSP is our own numpy code (D-050).*
+9. **MP3 recordings and ACX.** MP3 export from MP3 recordings is refused (lossy to lossy, CLAUDE.md), but ACX wants MP3. *Assumed: narrators deliver WAV; for MP3 originals, export WAV and encode elsewhere, or allow one re-encode as an explicit opt-in?*
+10. **Confirm the ACX numbers on acx.com.** The page was unreachable from this environment; the preset uses its summary in search results (D-051).
 8. **Commercial use?** If the app will ever be sold or used commercially, CrisperWhisper's weights are off the table, which D-007 already assumes.

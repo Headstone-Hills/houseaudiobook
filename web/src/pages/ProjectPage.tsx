@@ -7,6 +7,7 @@ import { ManuscriptPanel } from "../components/ManuscriptPanel";
 import { RemovedPanel } from "../components/RemovedPanel";
 import { TakesPanel } from "../components/TakesPanel";
 import { TimelinePanel } from "../components/TimelinePanel";
+import { ExportPanel, FinalizePanel, GuidePanel } from "../components/FinishPanels";
 import { SourceTable } from "../components/SourceTable";
 import { Waveform } from "../components/Waveform";
 import type { Job, PageSettings, PeakSettings, ProjectSummary } from "../state/engine";
@@ -126,6 +127,14 @@ export function ProjectPage({ project, jobs, peakSettings, pageDefaults, onChang
           onEdited={edited}
           onError={addError}
         />
+      )}
+
+      {project.sources.length > 0 && (
+        <>
+          <FinalizePanel jobs={jobs} onError={addError} />
+          <ExportPanel jobs={jobs} onError={addError} />
+          <GuidePanel revision={analysisRevision + manuscriptRevision + edlRevision} />
+        </>
       )}
     </main>
   );

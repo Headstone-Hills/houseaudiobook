@@ -600,3 +600,76 @@ global alignment:
 - Waveforms use the peak level whose bucket fits one pixel at the current
   zoom, fetched in 8192-bucket chunks as they come into view (SPEC §8).
 
+## D-050 · Finalize DSP is our own numpy code (M8)
+- Measurement follows ACX's terms: sample peak, unweighted RMS over the file,
+  and noise floor as the RMS of the quietest 0.5 s window. Digital silence (a
+  0.5 s window of zeros) is flagged.
+- Noise reduction is spectral gating.
+  - STFT of about 43 ms, Hann window, 75% overlap.
+  - Gain per bin: max(floor, 1 − (1 + 2·strength)·noise/level). The floor is
+    −reduction·min(1, 1.5·strength) dB, and the mask is smoothed 3×3.
+  - Blocks carry two FFTs of context on each side, so block results equal one
+    pass.
+- Dynamics run on 10 ms frames: vectorized gain computers, then
+  attack/release smoothing over frames, then linear interpolation to samples.
+  - Compressor: soft knee.
+  - Gate: downward expander with hold and a range limit.
+  - Limiter: 1 ms frames, min over a 5 ms look-ahead, 50 ms release, then a
+    final clamp that guarantees the ceiling.
+- Why not pedalboard: it is GPL-3.0 (open question 7).
+- Why not noisereduce/pyloudnorm: both need scipy, and noisereduce matplotlib,
+  for a few hundred lines we can test exactly.
+
+## D-051 · Presets and the ACX numbers (M8)
+- The ACX preset holds:
+  - RMS −23 to −18 dB; peak ≤ −3 dB; noise floor ≤ −60 dB RMS;
+  - MP3 ≥ 192 kbps CBR at 44.1 kHz; the same channel format in every file;
+  - 1–5 s room tone at each end (defaults: head 1 s, tail 3 s);
+  - ≤ 120 min per file.
+- The ACX help page (help.acx.com, "ACX Audio Submission Requirements") could
+  not be fetched from this environment (DNS blocked). The numbers come from
+  that page's summary in web search results on 2026-10-21, cross-checked with
+  secondary guides. Secondary guides disagree on the head room tone (0.5–1 s
+  vs 1–5 s), so the preset uses the summary's 1–5 s. The 120-minute limit
+  appears only in secondary guides. The preset says "verify on acx.com", and
+  custom presets can override everything.
+- Chain defaults: target RMS −20 dB (mid-range), ceiling −3.5 dB (0.5 dB under
+  the peak limit, as margin for MP3 encoding).
+
+## D-052 · Export pipeline and the report (M8)
+- There are three block passes per output file (BLOCK_S = 10 s, aligned to the
+  frame grids):
+  1. render the section with clip-level gain riding;
+  2. room tone head/tail, noise reduction, gate and compressor, written to a
+     float32 temp file while measuring RMS;
+  3. normalization gain and the limiter, into the encoder.
+- The section's own leading/trailing silence (beyond 0.25 s before speech and
+  0.5 s after) is replaced by the preset's room tone, looped from the
+  room-tone clip with 50 ms crossfades. It is not digital silence.
+- Encoders:
+  - WAV 16-bit with TPDF dither (seeded: repeatable exports), or 24-bit.
+  - MP3 via ffmpeg/libmp3lame, `-b:a` (CBR) at the preset's sample rate,
+    encoded once from float PCM.
+- **Never lossy to lossy:** if any clip on the timeline comes from a lossy
+  source, MP3 export is refused in pre-flight and by the API (409). WAV is
+  allowed.
+- The report measures each file **after writing**, by decoding it back, plus
+  ffprobe for codec, rate, channels and bitrate. So it describes what will be
+  uploaded.
+- Files go to `exports/<UTC stamp>/` with `report.json`, and the export is
+  logged. A failed or cancelled export removes only its own folder.
+- Chapter splits start where each chapter's first line (its heading) plays on
+  the timeline. Marker splits start at the markers.
+
+## D-053 · The narrator corrections guide (M8)
+- Rows are open issues: flubs and unread lines, plus long pauses and resolved
+  issues on request. Dismissed issues are never included.
+- Times are in a stated reference:
+  - "original": the recording the issue was found in, with its time;
+  - "master": the edited timeline, or "cut from the master" if the audio is
+    gone.
+- Sorting is by page (manuscript order) or by time.
+- Formats: CSV (with a commented preamble), a Markdown table, and a landscape
+  A4 PDF (reportlab) with a header (project, narrator, date, reference) and
+  counts by type.
+
