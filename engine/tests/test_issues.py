@@ -269,7 +269,7 @@ def test_reconcile_states() -> None:
     assert {k: (u.status, u.change) for k, u in updates.items()} == {
         "open-still": ("open", "still_open"),
         "dismissed": ("dismissed", "still_open"),  # the user's decision is kept
-        "resolved-back": ("open", "regressed"),
+        "resolved-back": ("resolved", "still_open"),  # resolved by hand: kept
         "auto-back": ("open", "regressed"),
         "fresh": ("open", "new"),
         "open-gone": ("resolved", "auto_resolved"),

@@ -53,7 +53,13 @@ def run_analysis(state: State, body: AnalysisRequest) -> dict[str, str]:
         return pipeline.run_analysis(p, stages, transcriber, ctx.progress, ctx.check_cancel)
 
     label = " + ".join(
-        {"transcribe": "Transcribe", "compare_text": "Compare to Text"}[s] for s in stages
+        {
+            "transcribe": "Transcribe",
+            "compare_text": "Compare to Text",
+            "flubs": "Flag flubs",
+            "silences": "Flag silences",
+        }[s]
+        for s in stages
     )
     # One lane: transcription saturates the CPU, so runs never overlap.
     return {"job_id": state.jobs.submit("analysis", label, run, lane="asr").id}

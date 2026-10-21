@@ -359,8 +359,8 @@ def reconcile(
 
     - found, not seen before: new, open;
     - found, was open: still open (details refreshed);
-    - found, user dismissed it: stays dismissed (the decision is kept);
-    - found, had been resolved (by the user, or automatically): regressed, reopened;
+    - found, the user dismissed or resolved it: kept as the user decided (SPEC §4);
+    - found, had been auto-resolved by an earlier run: regressed, reopened;
     - not found, was open, and its kind was checked this run: auto-resolved.
     Issues of kinds not checked this run are left alone.
     """
@@ -375,10 +375,11 @@ def reconcile(
         e = by_key.get(d.stable_key)
         if e is None:
             out.append(Update(d.stable_key, "open", "new", None, d))
-        elif e.status == "dismissed":
-            out.append(Update(d.stable_key, "dismissed", "still_open", e.decided_by, d))
-        elif e.status == "resolved":
+        elif e.status == "resolved" and e.decided_by == "auto":
             out.append(Update(d.stable_key, "open", "regressed", None, d))
+        elif e.status != "open":
+            # The user's decision (dismissed, or resolved by hand) is kept.
+            out.append(Update(d.stable_key, e.status, "still_open", e.decided_by, d))
         else:
             out.append(Update(d.stable_key, "open", "still_open", e.decided_by, d))
     for e in existing:

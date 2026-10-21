@@ -1,6 +1,7 @@
 """The analysis pipeline's I/O around the pure analysis code (SPEC §6.3).
 
-Stages so far (M3): Transcribe, then Compare to Text. Each run is recorded in
+Stages so far (M4): Transcribe, Compare to Text, then the checks that flag
+issues (flubs and unread lines; overlong silences). Each run is recorded in
 `analysis_run`. Expensive results are cached by file hash + settings (CLAUDE.md):
 transcripts in cache/transcripts/, energy envelopes in cache/envelope/.
 """
@@ -13,6 +14,7 @@ from typing import Any
 
 import numpy as np
 
+from hillaudio import issue_store
 from hillaudio.analysis import compare as cmp
 from hillaudio.analysis.boundaries import Envelope, EnvelopeBuilder, speech_mask
 from hillaudio.asr import cache as asr_cache
@@ -21,7 +23,9 @@ from hillaudio.ingest.decode import iter_blocks
 from hillaudio.progress import Cancelled, CheckCancel, Progress, never_cancel, no_progress
 from hillaudio.store.project import Project, Source, now_iso
 
-STAGES = ("transcribe", "compare_text")
+STAGES = ("transcribe", "compare_text", "flubs", "silences")
+# Issue kinds each checking stage produces (and so may auto-resolve).
+STAGE_KINDS = {"flubs": ["flub", "missing_line"], "silences": ["silence"]}
 ENVELOPE_KEY = "env-v1-10ms"
 
 
@@ -179,6 +183,16 @@ def run_analysis(
     if "compare_text" in stages and not sents:
         raise PipelineError("Compare to Text needs a manuscript; import one first")
 
+    compare_run = None
+    if "flubs" in stages and "compare_text" not in stages:
+        compare_run = latest_run(project)
+        if compare_run is None or is_stale(project, compare_run):
+            raise PipelineError("flagging flubs needs an up-to-date Compare to Text; run it first")
+    if "silences" in stages and "compare_text" not in stages and compare_run is None:
+        # Used for context (sentence/paragraph/chapter thresholds) when current.
+        last = latest_run(project)
+        compare_run = last if last is not None and not is_stale(project, last) else None
+
     if "compare_text" in stages and "transcribe" not in stages:
         missing = [s.label for s in sources if not transcript(project, s.id)]
         if missing:
@@ -217,6 +231,12 @@ def run_analysis(
                 readings += len(c.readings)
                 unaligned += len(c.unaligned)
             summary |= {"readings": readings, "unaligned": unaligned}
+            compare_run = run_id
+        kinds = [k for s in stages for k in STAGE_KINDS.get(s, [])]
+        if kinds:
+            progress(0.97, "checking for issues")
+            drafts = issue_store.detect(project, compare_run, kinds, check_cancel)
+            summary["issues"] = issue_store.apply(project, run_id, drafts, kinds)
         status = "done"
         progress(1.0, "done")
         return summary
@@ -236,6 +256,16 @@ def units_version(project: Project) -> int:
         return int(project.meta("units_version"))
     except KeyError:
         return 0
+
+
+def is_stale(project: Project, run_id: int) -> bool:
+    """Re-mapping the manuscript after this run replaced the units it compared
+    against (D-031): its results are out of date until Compare to Text re-runs."""
+    with project.db() as conn:
+        row = conn.execute(
+            "SELECT options_json FROM analysis_run WHERE id = ?", (run_id,)
+        ).fetchone()
+    return bool(json.loads(row["options_json"]).get("units_version") != units_version(project))
 
 
 def latest_run(project: Project, stage: str = "compare_text") -> int | None:
@@ -294,16 +324,9 @@ def comparison(project: Project, run_id: int) -> dict[str, Any]:
                 "best_score": best["score"] if best else None,
             }
         )
-    # Re-mapping the manuscript after this run replaced the units it compared
-    # against (D-031): the results are out of date until Compare to Text re-runs.
-    with project.db() as conn:
-        row = conn.execute(
-            "SELECT options_json FROM analysis_run WHERE id = ?", (run_id,)
-        ).fetchone()
-    stale = json.loads(row["options_json"]).get("units_version") != units_version(project)
     return {
         "run_id": run_id,
-        "stale": stale,
+        "stale": is_stale(project, run_id),
         "sentences": sentences_out,
         "unaligned": [dict(r) for r in unaligned],
     }

@@ -88,7 +88,7 @@ def test_full_run_matches_ground_truth(client: TestClient, factory: Factory) -> 
     setup_book(client)
     job = wait(client, client.post("/api/project/analysis", json={}))
     assert job["status"] == "done", job
-    assert job["label"] == "Transcribe + Compare to Text"
+    assert job["label"] == "Transcribe + Compare to Text + Flag flubs + Flag silences"
     assert sorted(factory.calls) == sorted(AUDIO)
 
     cmp = client.get("/api/project/comparison").json()
@@ -167,8 +167,8 @@ def test_stages_follow_the_project_functions(client: TestClient, tmp_path: Path)
         "/api/projects",
         json={
             "location": str(tmp_path / "projects"),
-            "name": "Silences only",
-            "functions": ["silences"],
+            "name": "Organize only",
+            "functions": ["organize"],  # not an analysis stage
         },
     )
     assert r.status_code == 200

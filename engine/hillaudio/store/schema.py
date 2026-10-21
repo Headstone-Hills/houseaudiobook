@@ -140,6 +140,37 @@ MIGRATIONS: list[str] = [
         text           TEXT NOT NULL
     );
     """,
+    # 4: issues (M4). One row per stable key: re-runs update it in place, so the
+    # user's decision (status, note) survives (SPEC §4, §6.7).
+    """
+    CREATE TABLE issue (
+        id                 INTEGER PRIMARY KEY,
+        stable_key         TEXT NOT NULL UNIQUE,
+        kind               TEXT NOT NULL CHECK (kind IN ('flub', 'missing_line', 'silence')),
+        severity           TEXT NOT NULL CHECK (severity IN ('high', 'medium', 'low')),
+        status             TEXT NOT NULL CHECK (status IN ('open', 'resolved', 'dismissed')),
+        decided_by         TEXT CHECK (decided_by IN ('auto', 'user')),
+        decided_at         TEXT,
+        note               TEXT NOT NULL DEFAULT '',
+        change             TEXT NOT NULL
+                           CHECK (change IN ('new', 'still_open', 'auto_resolved', 'regressed')),
+        first_run_id       INTEGER NOT NULL REFERENCES analysis_run(id),
+        last_run_id        INTEGER NOT NULL REFERENCES analysis_run(id),
+        source_file_id     INTEGER REFERENCES source_file(id),
+        start              REAL,
+        "end"              REAL,
+        page_label         TEXT,
+        -- Re-mapping replaces units; the issue keeps its text and key (SET NULL).
+        manuscript_unit_id INTEGER REFERENCES manuscript_unit(id) ON DELETE SET NULL,
+        sentence_text      TEXT NOT NULL,
+        expected           TEXT NOT NULL,
+        heard              TEXT NOT NULL,
+        detail_json        TEXT NOT NULL,
+        created_at         TEXT NOT NULL,
+        updated_at         TEXT NOT NULL
+    );
+    CREATE INDEX issue_kind ON issue (kind, status);
+    """,
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

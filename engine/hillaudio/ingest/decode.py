@@ -61,3 +61,36 @@ def iter_blocks(
         code = proc.wait()
     if finished and code != 0:
         raise RuntimeError(f"ffmpeg failed to decode {path.name}: {err.strip()[:200]}")
+
+
+def excerpt_wav(path: Path, start: float, end: float) -> bytes:
+    """[start, end) of the source as a 16-bit WAV, for listening in the browser.
+
+    A preview only: exports always render from the original source (CLAUDE.md).
+    Seeking before -i is sample-accurate when decoding in modern ffmpeg.
+    """
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-nostdin",
+            "-ss",
+            f"{max(start, 0.0):.6f}",
+            "-t",
+            f"{max(end - start, 0.0):.6f}",
+            "-i",
+            str(path),
+            "-f",
+            "wav",
+            "-acodec",
+            "pcm_s16le",
+            "-",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        err = proc.stderr.decode(errors="replace").strip()[:200]
+        raise RuntimeError(f"ffmpeg failed to decode {path.name}: {err}")
+    return proc.stdout

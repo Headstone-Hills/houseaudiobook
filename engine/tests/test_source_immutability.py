@@ -171,10 +171,11 @@ def test_m2_manuscript_workflows_leave_originals_untouched(
     assert {p: fingerprint(p) for p in originals} == before
 
 
-def test_m3_analysis_leaves_sources_untouched(
+def test_m3_m4_analysis_leaves_sources_untouched(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Transcribe + Compare to Text (and the energy envelope it decodes) only read."""
+    """Transcribe, Compare to Text, the issue checks, decisions and excerpts only
+    read the sources (one of them referenced in place)."""
     from fakeasr import FakeTranscriber
 
     monkeypatch.setenv("HILLAUDIO_HOME", str(tmp_path / "home"))
@@ -210,4 +211,16 @@ def test_m3_analysis_leaves_sources_untouched(
         wait(c, c.post("/api/project/analysis", json={}))
         wait(c, c.post("/api/project/analysis", json={"stages": ["compare_text"]}))
         assert c.get("/api/project/comparison").json()["sentences"]
+        found = c.get("/api/project/issues").json()["issues"]
+        assert found
+        ids = [i["id"] for i in found]
+        c.patch("/api/project/issues", json={"ids": ids, "status": "resolved"})
+        wait(c, c.post("/api/project/analysis", json={"stages": ["flubs", "silences"]}))
+        for i in found:
+            if i["source_file_id"] is not None:
+                r = c.get(
+                    f"/api/project/sources/{i['source_file_id']}/excerpt",
+                    params={"start": i["start"], "end": i["end"]},
+                )
+                assert r.status_code == 200
     assert {p: fingerprint(p) for p in originals} == before
