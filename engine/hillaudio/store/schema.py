@@ -276,6 +276,51 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX take_group_idx ON take (take_group_id, rank);
     """,
+    # 7: the multitrack timeline (M7, D-046). Narration segments gain clip
+    # attributes; other tracks hold free clips (edl_clip, SPEC §4); markers are
+    # anchored to a recording position so they follow edits.
+    """
+    ALTER TABLE edl_segment ADD COLUMN gain_db REAL NOT NULL DEFAULT 0;
+    ALTER TABLE edl_segment ADD COLUMN fade_in INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE edl_segment ADD COLUMN fade_out INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE edl_segment ADD COLUMN muted INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE edl_segment ADD COLUMN keep INTEGER NOT NULL DEFAULT 0;
+
+    CREATE TABLE track (
+        id       INTEGER PRIMARY KEY,
+        name     TEXT NOT NULL,
+        kind     TEXT NOT NULL CHECK (kind IN ('narration', 'audio')),
+        position INTEGER NOT NULL,
+        gain_db  REAL NOT NULL DEFAULT 0,
+        pan      REAL NOT NULL DEFAULT 0 CHECK (pan BETWEEN -1 AND 1),
+        mute     INTEGER NOT NULL DEFAULT 0,
+        solo     INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT INTO track (id, name, kind, position) VALUES (1, 'Narration', 'narration', 0);
+
+    CREATE TABLE edl_clip (
+        id             INTEGER PRIMARY KEY,
+        track_id       INTEGER NOT NULL REFERENCES track(id),
+        source_file_id INTEGER NOT NULL REFERENCES source_file(id),
+        source_in      INTEGER NOT NULL,
+        source_out     INTEGER NOT NULL,
+        timeline_start INTEGER NOT NULL,
+        gain_db        REAL NOT NULL DEFAULT 0,
+        fade_in        INTEGER NOT NULL DEFAULT 0,
+        fade_out       INTEGER NOT NULL DEFAULT 0,
+        muted          INTEGER NOT NULL DEFAULT 0,
+        CHECK (source_out > source_in AND timeline_start >= 0)
+    );
+
+    CREATE TABLE marker (
+        id             INTEGER PRIMARY KEY,
+        label          TEXT NOT NULL,
+        color          TEXT NOT NULL DEFAULT 'blue',
+        source_file_id INTEGER REFERENCES source_file(id),
+        sample         INTEGER,
+        created_at     TEXT NOT NULL
+    );
+    """,
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

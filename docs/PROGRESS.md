@@ -234,6 +234,46 @@ Risks:
 - The "later take" tie-break is a convention, not a measurement. Such groups are flagged "listen and confirm".
 - A pickup's own leading room tone stays at its file's home position, so a short silence may sit between files.
 
+## M7 · Timeline editor: in progress
+
+Plan:
+1. **Model (`edl/model.py`, pure).** This completes D-038/D-043.
+   - The **narration track** stays "ordered segments minus removed regions" (cleanup and takes keep working). Segments gain clip attributes: gain, fade in/out, mute, and a split mark.
+   - **Other tracks** (alternates, room tone, notes...) hold free clips at fixed timeline positions.
+   - Tracks have gain, pan, mute and solo.
+   - One pure `layout()` turns all of it into placed clips. Both the server render and the browser preview use it, so they can't disagree.
+2. **Edits**, all undoable entries (D-039):
+   - split at the playhead;
+   - trim (ripple) and rolling edits;
+   - move: within the narration (ripple insert), on other tracks (free), and between tracks;
+   - ripple-delete a selection;
+   - fade in/out, clip gain, clip mute;
+   - track gain/pan/mute/solo; add and rename tracks;
+   - markers (anchored to the recording, so they follow edits).
+3. **Schema v7:** `track`, `edl_clip` (SPEC §4), `marker`; segment attributes.
+4. **Render:** mix the tracks with clip gain/fades and track gain/pan (unity at centre), mute and solo. With no edits it is still sample-identical (the round-trip test).
+5. **API:**
+   - the timeline (tracks, clips, markers, issue markers, removed regions);
+   - windowed lanes for words, sentences and pauses (transcript lane and snapping, mapped to timeline time);
+   - edit endpoints.
+6. **Web: Timeline panel.**
+   - Canvas lanes with waveforms from the multi-resolution peaks, a ruler, zoom, scroll, playhead and selection.
+   - Lanes for the transcript, removed material (ghosted, restorable) and markers (issues coloured by kind).
+   - Track headers with mute, solo, gain and pan; an inspector for the selected clip.
+   - Mouse: drag to move, drag edges to trim, drag fade handles.
+   - Keyboard for every tool: Space, ←/→, Alt+←/→ snap, [ ] selection, S split, Delete ripple delete, Alt+Shift+←/→ move clip, Shift+[ ] trim, +/- gain, F/G fades, M marker, T track, Tab clip, Z zoom, ⌘/Ctrl+Z undo.
+   - **Realtime preview from the EDL:** Web Audio schedules the placed clips from source excerpts (proxies) with gain/fade/pan nodes, fetched ahead of the playhead. Edits apply without re-rendering.
+7. **Tests.**
+   - Model: split/move/trim/fades/tracks; layout vs render.
+   - Exact gain/fade/pan/mute/solo arithmetic; round trip after undo-all.
+   - Undo/redo of every op; immutability.
+   - UI pure helpers: snapping, schedule, zoom/time mapping, keyboard.
+   - e2e: edit from the keyboard, preview plays from the EDL.
+- **Risks.**
+  - Clips on other tracks don't ripple with narration edits (they are free, as in Audacity).
+  - The browser preview skips the 10 ms join crossfades; "Render preview" is exact.
+  - Canvas UI performance on a 10 h project: peaks by zoom level, and only the visible window is drawn or fetched.
+
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.
 1. Typical project size (hours, number of takes)? *Assumed: SPEC §8's 10 h / ~2 GB as the upper bound.*

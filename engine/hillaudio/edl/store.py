@@ -232,20 +232,65 @@ def _next_id(conn: sqlite3.Connection, table: str = "edit_region") -> int:
 # -- timeline order ------------------------------------------------------------------------
 
 
-def _read_segments(conn: sqlite3.Connection) -> list[list[int]]:
-    """Stored order as [source, in, out] lists; [] means the default order."""
+SEG_ATTRS = ("gain_db", "fade_in", "fade_out", "muted", "keep")
+
+
+def _seg_dict(s: Segment) -> dict[str, Any]:
+    return {
+        "source_file_id": s.source_id,
+        "source_in": s.source_in,
+        "source_out": s.source_out,
+        "gain_db": s.gain_db,
+        "fade_in": s.fade_in,
+        "fade_out": s.fade_out,
+        "muted": int(s.muted),
+        "keep": int(s.keep),
+    }
+
+
+def _seg(d: Any) -> Segment:
+    # Entries logged before M7 are [source, in, out].
+    if isinstance(d, list | tuple):
+        return Segment(int(d[0]), int(d[1]), int(d[2]))
+    return Segment(
+        d["source_file_id"],
+        d["source_in"],
+        d["source_out"],
+        float(d.get("gain_db", 0.0)),
+        int(d.get("fade_in", 0)),
+        int(d.get("fade_out", 0)),
+        bool(d.get("muted", 0)),
+        bool(d.get("keep", 0)),
+    )
+
+
+def _read_segments(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Stored order; [] means the default order."""
     return [
-        [r["source_file_id"], r["source_in"], r["source_out"]]
+        _seg_dict(_seg(dict(r)))
         for r in conn.execute("SELECT * FROM edl_segment ORDER BY position")
     ]
 
 
-def _write_segments(conn: sqlite3.Connection, segs: Sequence[Sequence[int]]) -> None:
+def _write_segments(conn: sqlite3.Connection, segs: Sequence[Any]) -> None:
     conn.execute("DELETE FROM edl_segment")
     conn.executemany(
-        "INSERT INTO edl_segment (position, source_file_id, source_in, source_out)"
-        " VALUES (?, ?, ?, ?)",
-        [(i, s[0], s[1], s[2]) for i, s in enumerate(segs)],
+        "INSERT INTO edl_segment (position, source_file_id, source_in, source_out, gain_db,"
+        " fade_in, fade_out, muted, keep) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (
+                i,
+                s.source_id,
+                s.source_in,
+                s.source_out,
+                s.gain_db,
+                s.fade_in,
+                s.fade_out,
+                int(s.muted),
+                int(s.keep),
+            )
+            for i, s in enumerate(_seg(x) for x in segs)
+        ],
     )
 
 
@@ -254,7 +299,7 @@ def segments(conn: sqlite3.Connection, sources: Sequence[SourceInfo]) -> list[Se
     if not rows:
         return default_segments(sources)
     known = {s.id for s in sources}
-    segs = [Segment(*r) for r in rows if r[0] in known]
+    segs = [_seg(r) for r in rows if r["source_file_id"] in known]
     # A recording imported after something was moved goes at the end.
     placed = {s.source_id for s in segs}
     segs += [Segment(s.id, 0, s.num_frames) for s in sources if s.id not in placed]
@@ -267,11 +312,7 @@ def segments_change(
     """The change that sets the timeline order (stored empty when it's the default)."""
     before = _read_segments(conn)
     norm = normalize(new)
-    after = (
-        []
-        if norm == default_segments(sources)
-        else [[s.source_id, s.source_in, s.source_out] for s in norm]
-    )
+    after = [] if norm == default_segments(sources) else [_seg_dict(s) for s in norm]
     return ("edl_segment", before, after)
 
 

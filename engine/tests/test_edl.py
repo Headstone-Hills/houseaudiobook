@@ -166,3 +166,59 @@ def test_place_within_one_recording_and_edges() -> None:
     # "Before" the very start, or a sample that isn't on the timeline: still valid.
     assert place(base, 1, 0, 1000, before=(1, 0)) == base
     assert normalize([Segment(1, 0, 5), Segment(1, 5, 5), Segment(1, 5, 9)]) == [Segment(1, 0, 9)]
+
+
+# -- M7: clip attributes, splits, free clips, tracks --------------------------------------
+
+
+def test_split_and_attributes_survive_normalize() -> None:
+    from hillaudio.edl.model import set_attrs, split
+
+    base = default_segments([A])
+    s = split(base, 1, 50_000)
+    assert normalize(s) == s and len(s) == 2 and s[0].keep  # a split stays a split
+    g = set_attrs(base, 1, 16_000, 32_000, gain_db=-6.0)
+    assert [(x.source_in, x.source_out, x.gain_db) for x in normalize(g)] == [
+        (0, 16_000, 0.0),
+        (16_000, 32_000, -6.0),
+        (32_000, 160_000, 0.0),
+    ]
+    # Back to 0 dB: still split (the user split it), not merged away silently.
+    back = set_attrs(g, 1, 16_000, 32_000, gain_db=0.0)
+    assert len(normalize(back)) == 3
+    # A fade sits on the clip edges and survives a cut inside the segment.
+    f = set_attrs(base, 1, 0, 160_000, fade_in=1600, fade_out=3200)
+    cl = clips([A], [region(1, 1, 80_000, 90_000)], 16000, f)
+    assert [(c.fade_in, c.fade_out) for c in cl] == [(1600, 0), (0, 3200)]
+
+
+def test_moving_a_piece_keeps_gain_not_fades() -> None:
+    from hillaudio.edl.model import set_attrs
+
+    g = set_attrs(default_segments([A, C]), 3, 0, 48_000, gain_db=3.0, fade_in=800)
+    moved = place(g, 3, 8000, 40_000, before=(1, 64_000))
+    piece = next(s for s in moved if s.source_id == 3 and s.source_in == 8000)
+    assert piece.gain_db == 3.0 and piece.fade_in == 0
+
+
+def test_layout_free_clips_and_solo() -> None:
+    from hillaudio.edl.model import FreeClip, Track, audible, layout
+
+    room = FreeClip(5, 2, 3, 0, 16_000, 32_000, gain_db=-12.0, fade_in=1600)
+    cl = layout([A, C], [], 16000, None, [room])
+    narr = [c for c in cl if c.track_id == 1]
+    other = [c for c in cl if c.track_id == 2]
+    assert len(narr) == 2 and [(c.timeline_start, c.timeline_end, c.clip_id) for c in other] == [
+        (32_000, 48_000, 5)
+    ]
+    assert other[0].gain_db == -12.0 and other[0].fade_in == 1600
+    tracks = {1: Track(1, "Narration", "narration"), 2: Track(2, "Room tone")}
+    assert all(audible(c, tracks) for c in cl)
+    tracks[2] = Track(2, "Room tone", solo=True)
+    assert [audible(c, tracks) for c in cl] == [False, False, True]
+    tracks[2] = Track(2, "Room tone", mute=True)
+    assert [audible(c, tracks) for c in cl] == [True, True, False]
+    # Free clips at other rates are placed in timeline samples.
+    hi = SourceInfo(4, 48000, 48000)
+    (c,) = layout([hi], [], 16000, [], [FreeClip(1, 2, 4, 0, 48000, 100)])[-1:]
+    assert (c.timeline_start, c.timeline_end) == (100, 16100)
