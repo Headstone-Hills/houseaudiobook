@@ -279,6 +279,41 @@ Risks:
 - The canvas redraws the visible window on every change; very long zoomed-out views of many clips may need tiling.
 - Preview fetches excerpts from the engine (localhost) about 8 s ahead. On slow disks the first chunk may start late; it joins in at the right offset rather than drifting.
 
+## M8 · Finalize + export: in progress
+
+Plan:
+1. **DSP** (`render/dsp.py`, pure numpy, D-050). No pedalboard (GPL, open question 7) and no scipy stack.
+   - Measurement: sample peak, RMS, and noise floor (quietest 0.5 s window), as ACX measures them.
+   - Noise reduction by spectral gating, with a noise profile from a selected room-tone region or the quietest stretch found automatically. Strength is adjustable.
+   - Gate/expander; compressor; clip-level gain riding, so clips and chapters sit at a consistent level; normalization to a target RMS; a look-ahead peak limiter.
+   - All processed in blocks, so a 2-hour chapter never has to be in memory twice.
+2. **Presets** (D-051).
+   - ACX / Audible, as of 2026-10, *verify on acx.com*: RMS -23…-18 dB, peak ≤ -3 dB, noise floor ≤ -60 dB RMS, MP3 ≥ 192 kbps CBR at 44.1 kHz, the same channel format for every file, 1–5 s of room tone at each end, ≤ 120 min per file.
+   - Custom presets.
+   - The chain is stored as project settings and applied at render time on the master bus; sources are never touched.
+3. **Report:** peak, RMS and noise floor per output file, measured on the *encoded* file (decoded back), with pass/fail against the preset. "Analyze" reports on the current timeline before export.
+4. **Export** (a cancellable job).
+   - Formats: WAV 16-bit (TPDF dither) or 24-bit at the project rate; MP3 CBR (selectable bitrate, 44.1 kHz) by ffmpeg/LAME, encoded once from the lossless render.
+   - Single file, or split per chapter (manuscript chapters on the timeline) or at markers. Room-tone head and tail on each file.
+   - **Never lossy→lossy:** MP3 export is refused when the timeline uses MP3 sources (WAV is offered).
+   - Files go to `exports/<date>/`.
+   - A pre-flight summary: unresolved issues, lossy or missing sources, the levels report.
+5. **Narrator corrections guide** (SPEC §6.9).
+   - CSV, Markdown and PDF (reportlab): timestamp, page, expected, heard, type and notes.
+   - Sorted by page or time. Timestamps refer to the original recording or the edited master, selectable and stated in the guide.
+   - A header (project, narrator, date) and counts by type.
+6. **UI:**
+   - Finalize panel: the chain settings, a preset, Analyze with the report, and A/B preview of a selection with and without the chain.
+   - Export panel: pre-flight summary, options, progress, results with per-file reports.
+   - Guide panel. Keyboard reachable throughout.
+7. **Tests.**
+   - DSP on synthetic signals: exact compressor curve, the limiter never exceeds its ceiling, the gate attenuates below threshold, noise reduction lowers a known noise floor while keeping speech RMS within 1 dB, normalization hits its target.
+   - Fixture export passes ACX after finalize, for WAV and MP3 (ffprobe-verified bitrate, rate, CBR).
+   - Lossy sources refused for MP3. Guide contents in all three formats. API, UI, e2e; immutability.
+- **Risks.**
+  - ACX's page couldn't be fetched from this environment; numbers come from its summary in search results and secondary guides. The preset is editable and marked "verify".
+  - Home-made DSP is simpler than commercial tools; quality depends on the room. A/B preview lets the user judge.
+
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.
 1. Typical project size (hours, number of takes)? *Assumed: SPEC §8's 10 h / ~2 GB as the upper bound.*
