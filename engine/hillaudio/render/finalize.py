@@ -31,7 +31,7 @@ from typing import Any, Literal
 import numpy as np
 import soundfile as sf
 
-from hillaudio import pipeline
+from hillaudio import pipeline, tools
 from hillaudio.analysis.boundaries import speech_mask
 from hillaudio.edl import timeline_store
 from hillaudio.edl.model import NARRATION, Clip
@@ -567,7 +567,7 @@ class Encoder:
         if fmt == "mp3":
             self.proc: subprocess.Popen[bytes] | None = subprocess.Popen(
                 [
-                    "ffmpeg",
+                    tools.ffmpeg(),
                     "-v",
                     "error",
                     "-nostdin",
@@ -623,7 +623,7 @@ class Encoder:
 def probe(path: Path) -> dict[str, Any]:
     proc = subprocess.run(
         [
-            "ffprobe",
+            tools.ffprobe(),
             "-v",
             "error",
             "-show_entries",

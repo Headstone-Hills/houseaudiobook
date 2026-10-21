@@ -322,6 +322,38 @@ Risks:
 - The ACX numbers are unverified at the source (open question 10).
 - Long single-file exports are limited by temp disk (pass 1 writes float32: about 600 MB per hour at 44.1 kHz mono).
 
+## M9 · macOS packaging: in progress
+
+Plan:
+1. **The engine as one standalone server** (`hillaudio serve`).
+   - Serves the built web UI and the API from one localhost port: a free port chosen safely, and a `READY port=…` line for the shell.
+   - Exits when the shell does (stdin closes).
+   - The app home follows the platform: `~/Library/Application Support/HillAudiobook` on macOS; the existing `~/.hillaudiobook` keeps working.
+   - ffmpeg/ffprobe are found next to the engine (bundled), via `$HILLAUDIO_FFMPEG_DIR`, or on PATH.
+2. **First-run model download** (D-055).
+   - An explicit, visible download of the chosen speech model: size shown first, progress, cancel, and resume.
+   - Each file is verified against the Hugging Face revision's checksums (SHA-256 for weights, git blob SHA-1 for small files), at a **pinned revision**.
+   - Transcription uses only installed models; nothing downloads behind the user's back.
+   - UI: a first-run banner and a Models section.
+3. **The shell** (`shell/`, Tauri 2).
+   - A small Rust `launcher` crate, unit-tested here: find the bundled engine, start it, wait for READY with a timeout, stop it on exit.
+   - The app window opens the engine's own origin. `--smoke-test` starts the engine, checks `/api/health`, and exits, for CI.
+   - Hardened runtime with entitlements, no App Sandbox (reference-mode imports need arbitrary paths).
+   - Signing and notarization driven by environment variables (`APPLE_SIGNING_IDENTITY`, `APPLE_ID`/`APPLE_TEAM_ID`/`APPLE_PASSWORD` or an API key): **signed-ready**, unsigned when they're absent.
+4. **Build:** `scripts/build_macos.sh`.
+   - Web build, then the PyInstaller engine (onedir, for a fast start) with bundled ffmpeg/ffprobe, then `tauri build`, then deep signing and notarization when credentials are set.
+   - A **CI job on a macOS runner** builds the `.app` and runs its smoke test.
+5. **Web mode still works.** `make dev` is unchanged, and `make serve` runs the production single-port server. Tested (API + UI + SPA routes) and smoke-tested in CI.
+6. **Tests.**
+   - Serve/static/READY/stdin exit.
+   - Model manager against a fake Hugging Face server: progress, resume, checksum mismatch, cancel, no partial install.
+   - The launcher (cargo test); UI first-run; e2e.
+   - The PyInstaller build is verified on Linux by running the frozen engine through a real transcription.
+- **Risks.**
+  - The `.app` can only be built and run on macOS: CI is the proof, not this container.
+  - Bundled ffmpeg licensing (GPL builds): recorded in LICENSES, needs a decision before distribution.
+  - Intel Macs: the CI build is Apple Silicon (open question 5).
+
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.
 1. Typical project size (hours, number of takes)? *Assumed: SPEC §8's 10 h / ~2 GB as the upper bound.*

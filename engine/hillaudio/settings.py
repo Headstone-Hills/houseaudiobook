@@ -1,6 +1,6 @@
 """Per-user app settings: the recent-projects list and the default project location.
 
-Stored in `$HILLAUDIO_HOME` (default `~/.hillaudiobook`). Only paths and names
+Stored in the app home (`app_home()`). Only paths and names
 are kept here, never audio or text.
 """
 
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -17,7 +18,16 @@ MAX_RECENT = 20
 
 
 def app_home() -> Path:
-    return Path(os.environ.get("HILLAUDIO_HOME", "~/.hillaudiobook")).expanduser()
+    """$HILLAUDIO_HOME; else the platform's place for app data (D-056):
+    ~/Library/Application Support/HillAudiobook on macOS, ~/.hillaudiobook
+    elsewhere (and on a Mac that already has one, so nothing is lost)."""
+    env = os.environ.get("HILLAUDIO_HOME")
+    if env:
+        return Path(env).expanduser()
+    legacy = Path("~/.hillaudiobook").expanduser()
+    if sys.platform == "darwin" and not legacy.exists():
+        return Path("~/Library/Application Support/HillAudiobook").expanduser()
+    return legacy
 
 
 def default_location() -> Path:

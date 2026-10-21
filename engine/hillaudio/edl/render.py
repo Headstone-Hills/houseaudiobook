@@ -24,6 +24,7 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 
+from hillaudio import tools
 from hillaudio.edl.model import NARRATION, Clip, Track, audible
 
 XFADE_S = 0.005  # each side of a join: 10 ms in all
@@ -53,7 +54,7 @@ def read(inp: Input, start: int, n: int, rate: int, channels: int) -> Audio:
     skip = start - coarse * sr
     if rate != sr:
         skip = round(Fraction(skip * rate, sr))
-    cmd = ["ffmpeg", "-v", "error", "-nostdin"]
+    cmd = [tools.ffmpeg(), "-v", "error", "-nostdin"]
     if coarse:
         # (Not "-ss 0": for MP3 that changes how the encoder delay is skipped.)
         cmd += ["-ss", str(coarse)]

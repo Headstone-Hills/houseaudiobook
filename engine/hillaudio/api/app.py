@@ -59,7 +59,11 @@ def create_app(
     hosts: frozenset[str] = DEFAULT_HOSTS,
     origins: frozenset[str] | None = None,
     transcriber_factory: TranscriberFactory | None = None,
+    web_dir: Path | None = None,
 ) -> FastAPI:
+    """The engine. `web_dir`: a built UI (web/dist) to serve at /, so one localhost
+    port serves both (the packaged app, `make serve`); without it, the Vite dev
+    server serves the UI and proxies /api here (`make dev`)."""
     state = EngineState(transcriber_factory) if transcriber_factory else EngineState()
 
     @asynccontextmanager
@@ -328,6 +332,13 @@ def create_app(
     app.include_router(takes.router)
     app.include_router(timeline.router)
     app.include_router(finalize.router)
+    if web_dir is not None:
+        if not (web_dir / "index.html").is_file():
+            raise RuntimeError(f"no built UI in {web_dir} (run: cd web && npm run build)")
+        from fastapi.staticfiles import StaticFiles
+
+        # Mounted last, so every /api route above wins.
+        app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")
     app.add_middleware(
         LocalOnlyGuard,
         hosts=hosts,
@@ -337,6 +348,7 @@ def create_app(
 
 
 def main() -> None:
+    """`make dev`: the API on :8765 with auto-reload (the UI comes from Vite)."""
     import uvicorn
 
     uvicorn.run(

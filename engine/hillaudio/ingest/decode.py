@@ -13,6 +13,8 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 
+from hillaudio import tools
+
 BLOCK_FRAMES = 1 << 16
 
 
@@ -22,7 +24,7 @@ def iter_blocks(
     """Yield (frames, channels) float32 blocks at the file's native sample rate."""
     proc = subprocess.Popen(
         [
-            "ffmpeg",
+            tools.ffmpeg(),
             "-v",
             "error",
             "-nostdin",
@@ -71,7 +73,7 @@ def excerpt_wav(path: Path, start: float, end: float) -> bytes:
     """
     proc = subprocess.run(
         [
-            "ffmpeg",
+            tools.ffmpeg(),
             "-v",
             "error",
             "-nostdin",

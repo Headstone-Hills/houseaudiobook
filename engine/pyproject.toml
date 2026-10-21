@@ -18,6 +18,9 @@ dependencies = [
     "reportlab>=4",  # the narrator guide's PDF (BSD)
 ]
 
+[project.scripts]
+hillaudio = "hillaudio.cli:main"
+
 [project.optional-dependencies]
 # Local speech recognition (D-007). Model weights download on first use to
 # $HILLAUDIO_HOME/models and are never committed.

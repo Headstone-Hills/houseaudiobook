@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from hillaudio import tools
+
 # v1 supports only these (SPEC §2). Keyed by ffprobe's format_name, with the
 # file extensions we accept for each, so a renamed file can't slip through.
 SUPPORTED_FORMATS: dict[str, tuple[str, ...]] = {
@@ -83,7 +85,7 @@ def parse_ffprobe(data: dict[str, Any], suffix: str) -> ProbeInfo:
 def probe(path: Path) -> ProbeInfo:
     proc = subprocess.run(
         [
-            "ffprobe",
+            tools.ffprobe(),
             "-v",
             "error",
             "-print_format",

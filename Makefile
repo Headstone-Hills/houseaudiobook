@@ -5,7 +5,7 @@ VENV   := engine/.venv
 PY     := $(VENV)/bin/python
 NPM    ?= npm
 
-.PHONY: setup dev test test-engine test-web check lint typecheck fixtures e2e clean
+.PHONY: setup dev serve web-build test test-engine test-web check lint typecheck fixtures e2e clean
 
 setup: $(VENV)/.installed web/node_modules/.installed
 	@command -v ffmpeg >/dev/null || { echo "error: ffmpeg not found (brew install ffmpeg / apt install ffmpeg)"; exit 1; }
@@ -29,6 +29,13 @@ dev: setup
 	(cd engine && .venv/bin/python -m hillaudio.api.app) & \
 	(cd web && $(NPM) run dev) & \
 	wait
+
+# Production web mode: the built UI and the API on one port (what the app runs).
+serve: setup web-build
+	$(PY) -m hillaudio serve --port $${PORT:-8765} --web-dir web/dist
+
+web-build: web/node_modules/.installed
+	cd web && $(NPM) run build --silent
 
 test: test-engine test-web
 

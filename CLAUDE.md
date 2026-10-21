@@ -24,6 +24,7 @@ Maintain these entry points (create them in M0 and keep them working):
 ```
 make setup      # venv, deps, npm install, check ffmpeg
 make dev        # engine + web dev servers
+make serve      # production web mode: built UI + API on one port
 make test       # engine tests + web tests
 make check      # ruff, mypy, tsc --noEmit, eslint, tests
 make fixtures   # regenerate synthetic test audio + ground truth
