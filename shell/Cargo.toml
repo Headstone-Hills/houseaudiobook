@@ -10,3 +10,8 @@ license = "UNLICENSED"
 [profile.release]
 strip = true
 lto = true
+
+# Proc-macros and build scripts are host dylibs loaded by rustc. Stripped, they
+# fail to load on macOS 27 ("mis-aligned LINKEDIT string pool"). The app stays stripped.
+[profile.release.build-override]
+strip = false
