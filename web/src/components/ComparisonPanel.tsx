@@ -18,9 +18,9 @@ interface Props {
   onError: (msg: string) => void;
 }
 
-/** Transcribe + Compare to Text (SPEC §6.3 steps 1 and 3): run it, then read the
- * per-sentence results. The full Issues panel (filters, resolve/dismiss, jump to
- * audio) is M4; this view shows what the comparison found. */
+/** Transcribe + Compare to Text (SPEC §6.3 steps 1 and 3): run it (with the
+ * project's checks), then read the per-sentence results. What needs fixing is
+ * in the Issues panel. */
 export function ComparisonPanel({ canRun, why, revision, onError }: Props) {
   const [asr, setAsr] = useState<AsrInfo | null>(null);
   const [model, setModel] = useState("");

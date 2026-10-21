@@ -7,6 +7,7 @@ Downloads ~460 MB on first use. Run with:
 
 M3 acceptance: the report on fixtures matches the injected errors (D-028 targets:
 every read sentence found, the injected misread and skip flagged, no false flags).
+M4 acceptance: the Issues list is exactly the skip and the two long pauses.
 """
 
 from __future__ import annotations
@@ -93,3 +94,12 @@ def test_small_en_finds_exactly_the_injected_errors(client: TestClient, tmp_path
     }
     assert extras[2] == ["The"] and extras[9] == ["The"]  # the two stutters
     assert any("water" in u["text"] for u in cmp["unaligned"])  # the commentary
+
+    # M4: the misread has a clean pickup, so only the skip is a flub; plus two pauses.
+    issues = client.get("/api/project/issues").json()["issues"]
+    got = sorted((i["kind"], i["severity"], i["source_label"], i["page_label"]) for i in issues)
+    assert got == [
+        ("flub", "high", "ch01_take1", "2"),
+        ("silence", "medium", "ch01_take1", "1"),
+        ("silence", "medium", "ch02_take1", "3"),
+    ]

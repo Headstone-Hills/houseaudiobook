@@ -26,3 +26,10 @@ export class FakeWebSocket {
   close() {}
 }
 globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+
+// jsdom has no media playback; the Issues panel only needs play/pause to exist.
+Object.defineProperty(HTMLMediaElement.prototype, "play", {
+  configurable: true,
+  value: () => Promise.resolve(),
+});
+Object.defineProperty(HTMLMediaElement.prototype, "pause", { configurable: true, value: () => undefined });

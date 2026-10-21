@@ -143,6 +143,10 @@ export interface ReadingDiff {
   heard: string;
   start: number | null;
   end: number | null;
+  /** An extra that repeats neighbouring text (a stutter or restart): cleanup, not a flub. */
+  repeat?: boolean;
+  /** Mean recognition confidence of the heard words. */
+  confidence?: number | null;
 }
 
 export interface SentenceReading {
@@ -172,6 +176,57 @@ export interface Comparison {
   stale: boolean;
   sentences: SentenceComparison[];
   unaligned: { source_file_id: number; source_label: string; start: number; end: number; text: string }[];
+}
+
+export type IssueKind = "flub" | "missing_line" | "silence";
+export type IssueSeverity = "high" | "medium" | "low";
+export type IssueStatus = "open" | "resolved" | "dismissed";
+export type IssueChange = "new" | "still_open" | "auto_resolved" | "regressed";
+
+export interface Issue {
+  id: number;
+  stable_key: string;
+  kind: IssueKind;
+  severity: IssueSeverity;
+  status: IssueStatus;
+  decided_by: "auto" | "user" | null;
+  note: string;
+  change: IssueChange;
+  last_run_id: number;
+  source_file_id: number | null;
+  source_label: string | null;
+  start: number | null;
+  end: number | null;
+  page_label: string | null;
+  manuscript_unit_id: number | null;
+  sentence_text: string;
+  expected: string;
+  heard: string;
+  detail: {
+    diffs?: ReadingDiff[];
+    complete?: boolean;
+    likely_misheard?: boolean;
+    takes?: number;
+    seconds?: number;
+    boundary?: "sentence" | "paragraph" | "chapter" | "unknown";
+    threshold?: number;
+    suggested_s?: number;
+  };
+}
+
+export interface IssueList {
+  issues: Issue[];
+  /** The latest check run: "change" badges apply to issues it touched. */
+  last_check_run: number | null;
+  stale: boolean;
+}
+
+export interface IssueSettings {
+  silence_sentence_s: number;
+  silence_paragraph_s: number;
+  silence_chapter_s: number;
+  similar_spelling: number;
+  low_confidence: number;
 }
 
 /** Where a manuscript comes from: a local path, an upload, or the project's copy. */
@@ -250,9 +305,16 @@ export const api = {
   remapManuscript: (settings: Partial<PageSettings>) =>
     request<{ job_id: string }>("PUT", "/api/project/manuscript/settings", { settings }),
   asrInfo: () => request<AsrInfo>("GET", "/api/asr"),
-  runAnalysis: (stages: string[] | null, model: string) =>
-    request<{ job_id: string }>("POST", "/api/project/analysis", { stages, asr: { model } }),
+  /** model: null when no stage transcribes (checks only). */
+  runAnalysis: (stages: string[] | null, model: string | null) =>
+    request<{ job_id: string }>("POST", "/api/project/analysis", { stages, asr: model ? { model } : {} }),
   comparison: () => request<Comparison | null>("GET", "/api/project/comparison"),
+  issues: () => request<IssueList>("GET", "/api/project/issues"),
+  decideIssues: (ids: number[], change: { status?: IssueStatus; note?: string }) =>
+    request<{ issues: Issue[] }>("PATCH", "/api/project/issues", { ids, ...change }),
+  issueSettings: () => request<IssueSettings>("GET", "/api/project/issue-settings"),
+  saveIssueSettings: (s: Partial<IssueSettings>) =>
+    request<IssueSettings>("PUT", "/api/project/issue-settings", s),
   manuscriptUnits: (kind: ManuscriptUnit["kind"], offset: number, limit: number) =>
     request<{ total: number; offset: number; units: ManuscriptUnit[] }>(
       "GET",
@@ -262,6 +324,11 @@ export const api = {
 
 /** All buckets of one level. The engine pages large responses, and a 10-hour
  * hi-res file can exceed one page even at the coarsest level. */
+/** The audio around [start, end] (the engine adds ±3 s of context), as WAV. */
+export function excerptUrl(sourceId: number, start: number, end: number): string {
+  return `/api/project/sources/${sourceId}/excerpt?start=${start.toFixed(3)}&end=${end.toFixed(3)}`;
+}
+
 export async function fetchAllPeaks(sourceId: number, level: number): Promise<PeaksResponse> {
   const first = await api.peaks(sourceId, level);
   const min = [...first.min];

@@ -118,21 +118,46 @@ Risks:
 - Long restarts appear as partial readings and short ones as "extra" differences (D-030); M5 must handle both.
 - Re-mapping pages clears comparison results (by design, D-031); the panel then says the results are out of date and asks for a re-run (transcripts are reused).
 
-## M4 · Issues pipeline: in progress
+## M4 · Issues pipeline: done (2026-10-21)
 
-Plan:
-1. **`analysis/issues.py`** (pure).
-   - **Flubs:** a sentence with no clean complete take gets a flub issue, with the best take's timestamp, page, and expected vs heard text. A sentence never read gets a *missing line* issue.
-   - **Severity:** lowered to "check" when every error looks like a mishearing (a similar spelling, or a low-confidence heard word). Every false flag in the M3 benchmark was of that kind.
-   - **Repeats:** extra words that repeat neighbouring text are tagged as such. They are cleanup (M5), not flubs.
-   - **Silences:** pauses over 2.0 s within a paragraph, 3.0 s at paragraph breaks and 5.0 s at chapter breaks (SPEC §6.3.6). The boundary type comes from the alignment.
-2. **Stable keys and re-run reconciliation** (SPEC §4, §6.7). Keys come from the issue kind and the sentence text in context (not unit ids, which re-mapping replaces). Re-runs mark issues *new*, *still open*, *auto-resolved* or *regressed*. User decisions (dismissed, notes) are preserved. Auto-resolution is logged `auto` and reversible (reopen).
-3. **Store, pipeline and API.** Schema v4 `issue` table; `flubs`/`silences` as pipeline stages; issue settings; status, note and bulk endpoints (logged); an audio excerpt endpoint for jump-to-audio with ±3 s of context.
-4. **Issues panel.** Sortable and filterable (kind, status, change). Keyboard shortcuts for every review action: next/previous, play, resolve, dismiss, reopen, note, select and bulk.
-5. **Tests.** Precision/recall for flub and silence detection on the fixtures (perfect and noisy fake ASR, and real small.en); reconciliation states; API, UI and e2e.
-- **Risks.**
-  - Silence detection depends on the speech threshold in noisy rooms.
-  - Severity heuristics could hide real misreads of similar-looking words. Mitigation: "check" issues are still listed, only ranked lower.
+Acceptance criteria (SPEC §9):
+- [x] **Flubs and overlong silences flagged with timestamp + page.**
+  - A sentence with no clean complete take is a *flub*, pointing at its best take; a sentence never read is an *unread line* (D-033).
+  - Pauses over the threshold for their boundary are *long pauses*: 2.0 s within a paragraph, 3.0 s at a paragraph break, 5.0 s at a chapter break, all configurable (D-035).
+  - Each issue carries its recording, time range and page.
+  - Fixtures, perfect fake ASR: flub precision/recall 1.0 (only the skip; the misread has a clean pickup, and stutters are repeats, not flubs). Silence precision/recall 1.0, with both boundary types right.
+  - Noisy fake ASR: the skip is found in every seed.
+  - **Real small.en** (`test_real_model.py`): exactly the skip and the two pauses.
+- [x] **Issues panel.**
+  - Sortable (page, recording time, severity, type) and filterable (type, status, severity).
+  - Expected vs heard, change badges, notes, bulk actions.
+  - Keyboard shortcuts for every review action: ↑/↓ or j/k, Space, r, d, o, n, x.
+- [x] **Jump-to-audio.** Space or the time link plays a WAV excerpt with ±3 s of context, decoded from the original source (D-037).
+- [x] **Re-run with diff and preserved decisions.**
+  - Stable keys come from the kind and the sentence's text in context (D-034).
+  - Re-runs mark issues *new*, *still open*, *fixed* (auto-resolved) or *back again* (regressed).
+  - Dismissed and hand-resolved issues stay as the user left them, also across a page re-map.
+  - Every status change a re-run makes is logged `auto` with its previous status. Every user decision is logged `user` (D-036).
+- [x] Immutability test covers checks, decisions and excerpts.
+
+`make check`: 206 engine tests (1 opt-in skipped), 30 web tests. `make e2e`: 4 tests.
+
+Bugs found and fixed, with regression tests:
+- A medium.en mishearing ("laughed" → "left") was high severity because the spellings differ. It is now caught by a sound-alike key.
+- The `make check` mypy error on an `int | None` sort key in a test.
+
+Deferred:
+- "Shorten to N seconds" for pauses. It needs the EDL (M5). Each pause already carries its `suggested_s`.
+- Re-run *scope* by selected range (SPEC §6.7). Stage scope works ("Re-run checks" runs flubs + silences).
+- Re-analyzing the *edited* timeline. Until M5 there are no edits, so checks run on the sources.
+- Issue markers on the waveform (M7 timeline).
+- An undo button for auto changes. They are logged with the previous status and can be reopened by hand. Full undo/redo arrives with the EDL history in M5.
+
+Risks:
+- Silence detection uses the energy speech mask. Noisy rooms or breaths can split or merge pauses. Thresholds are adjustable, but the mask itself is not yet.
+- The severity heuristic could rank a real misread of a similar-sounding word as "Check". Those issues are still listed, only ranked lower.
+- Stable keys depend on sentence text. Editing a sentence's wording in the manuscript makes its issues new (old decisions stay on the old keys, unmatched).
+- Fixtures are synthetic (one voice, 13 sentences). Re-check on a real narration before M8.
 
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.

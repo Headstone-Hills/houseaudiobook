@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ImportPanel } from "../components/ImportPanel";
 import { JobsPanel } from "../components/JobsPanel";
 import { ComparisonPanel } from "../components/ComparisonPanel";
+import { IssuesPanel } from "../components/IssuesPanel";
 import { ManuscriptPanel } from "../components/ManuscriptPanel";
 import { SourceTable } from "../components/SourceTable";
 import { Waveform } from "../components/Waveform";
@@ -91,6 +92,13 @@ export function ProjectPage({ project, jobs, peakSettings, pageDefaults, onChang
       <ComparisonPanel
         canRun={analysisBlocker === null}
         why={analysisBlocker}
+        revision={analysisRevision + manuscriptRevision}
+        onError={addError}
+      />
+
+      <IssuesPanel
+        checks={project.functions.filter((f) => f === "flubs" || f === "silences")}
+        canRun={project.sources.length > 0}
         revision={analysisRevision + manuscriptRevision}
         onError={addError}
       />

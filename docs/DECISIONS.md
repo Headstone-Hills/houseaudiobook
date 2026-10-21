@@ -336,3 +336,76 @@ global alignment:
   misread and skip flagged, both stutters found, the commentary unaligned.
 - `scripts/bench_asr.py` compares models (ASR quality and Compare to Text
   precision/recall); see docs/bench/.
+
+## D-033 · What becomes an issue (M4)
+- **Flub:** a sentence whose best take (complete, fewest text errors, highest
+  score) still has a text error: missing, substitution, transposition,
+  reordered, or an extra word that is not a repeat.
+  - One issue per sentence, not per take. If any take is clean, nothing needs
+    fixing: the take choice is M6's.
+  - A sentence with only false starts is a flub ("never read to the end").
+- **Unread line:** a sentence with no reading at all.
+- **Repeats are not flubs.** An extra word block equal to the manuscript words
+  right after or right before it (a stutter or a restart) is tagged `repeat`.
+  It is left to cleanup (M5).
+- **Severity:**
+  - high: real text errors and unread lines;
+  - medium: long pauses;
+  - low, shown as "Check": every error looks like the recognizer, not the
+    narrator. That means heard confidence < 0.6, or a substitution with spelling
+    ratio ≥ 75, or the same sound key (a small English phonetic key, e.g.
+    "laughed"/"left").
+  - Benchmark (docs/bench): small.en has 0 false issues. Every other model's
+    false issues are mostly "Check".
+  - Low issues stay listed. Hiding them could hide a real misread.
+
+## D-034 · Stable issue keys (M4)
+- key = sha256(kind, context)[:24].
+  - For text issues the context is the normalized text of the sentence and its
+    two neighbours, so a line repeated elsewhere in the book gets its own key.
+  - For pauses it is the source's content hash plus the sentences on either
+    side (or a 5 s time bucket when none aligned).
+- Not unit ids or page labels: re-mapping pages replaces units, and the same
+  issue must be found again. `manuscript_unit_id` is ON DELETE SET NULL. The
+  issue keeps its text and is re-linked on the next run.
+- Not exact times: a retranscription shifts them slightly.
+
+## D-035 · Long pauses (M4)
+- Pauses are gaps between speech in the energy speech mask (D-029 snapping).
+  Leading and trailing room tone of a file is not a pause.
+- The boundary type comes from the aligned sentences on either side:
+  - different chapter units: chapter;
+  - different paragraph units: paragraph;
+  - otherwise: sentence;
+  - with no alignment on one side: unknown, which uses the strictest
+    (sentence) threshold.
+- Defaults are 2.0 / 3.0 / 5.0 s (SPEC §6.3.6 suggests > 2.0 s), stored per
+  project in `project_meta.issue_settings`, and must be ordered
+  sentence ≤ paragraph ≤ chapter.
+
+## D-036 · Re-run reconciliation (M4)
+- One `issue` row per stable key; a run updates rows in place. For the kinds
+  the run checked:
+  - found, unknown key: new, open;
+  - found, open: still open, details refreshed;
+  - found, dismissed or resolved by the user: kept as the user left it
+    (SPEC §4: "issues with matching keys keep their status");
+  - found, auto-resolved earlier: regressed, reopened;
+  - not found, open: auto-resolved, `decided_by = auto`.
+- Kinds not checked are untouched. "Change" badges apply only to issues the
+  latest check touched (`last_run_id`).
+- Every status change a run makes is logged `auto` with from/to and reason, so
+  each is reversible (reopen). User decisions and notes are logged `user` with
+  their previous values.
+- Checking flubs needs an up-to-date Compare to Text run. Pauses use one for
+  boundary context only when it is up to date.
+
+## D-037 · Jump-to-audio (M4)
+- `GET /api/project/sources/{id}/excerpt?start&end` decodes [start − 3 s,
+  end + 3 s], clamped to the file and at most 60 s, to 16-bit WAV with ffmpeg.
+  Headers give the excerpt's real start and end.
+- This is a preview only. Exports still render from the original sources, and
+  16-bit PCM from any source is never a lossy re-encode.
+- The browser plays it in one `<audio>` element with visible controls. A
+  waveform playhead arrives with the timeline (M7).
+

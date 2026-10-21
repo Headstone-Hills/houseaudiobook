@@ -80,3 +80,23 @@ label.check { display: block; margin: 0.4rem 0; }
 .diffs { margin: 0.2rem 0 0.2rem 1.5rem; color: var(--err-fg); }
 .takes { border-collapse: collapse; margin: 0.4rem 0; }
 .takes th, .takes td { text-align: left; padding: 0.2rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+/* Issues (M4) */
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+.issues .run-row, .issue-controls { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0; }
+.issue-controls label { margin: 0 0.35rem 0 0; }
+.issue-table { width: 100%; border-collapse: collapse; }
+.issue-table th, .issue-table td { text-align: left; vertical-align: top; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--border); }
+.issue-table tr[aria-current="true"] { outline: 2px solid var(--accent, #3b6fd8); outline-offset: -2px; }
+.issue-table tr:focus { outline: 2px solid var(--accent, #3b6fd8); outline-offset: -2px; }
+.issue-table tr.sev-high td:nth-child(3) { color: var(--err-fg); font-weight: 600; }
+.issue-table tr.st-resolved, .issue-table tr.st-dismissed { opacity: 0.7; }
+.issue-table .expected { font-weight: 600; }
+button.link { background: none; border: none; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
+.badge { font-size: 0.85em; font-weight: 600; }
+.change-new, .change-regressed { color: var(--err-fg); }
+.issue-settings form { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: end; }
+.issue-settings input { width: 5rem; }
