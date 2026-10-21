@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ProjectPage } from "./pages/ProjectPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
+import { ModelsBanner } from "./components/ModelsBanner";
 import { api, subscribeJobs, type FunctionDef, type Job, type ProjectSummary, type Settings } from "./state/engine";
 
 export function App() {
@@ -62,9 +63,18 @@ export function App() {
     );
   }
   if (!settings) return <p role="status">Connecting to engine…</p>;
-  if (!project) return <ProjectsPage settings={settings} functionDefs={functionDefs} onOpened={setProject} />;
+  const banner = <ModelsBanner jobs={jobs} defaultModel="small.en" />;
+  if (!project)
+    return (
+      <>
+        {banner}
+        <ProjectsPage settings={settings} functionDefs={functionDefs} onOpened={setProject} />
+      </>
+    );
   return (
-    <ProjectPage
+    <>
+      {banner}
+      <ProjectPage
       key={project.path}
       project={project}
       jobs={jobs}
@@ -80,6 +90,7 @@ export function App() {
           })
           .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
       }}
-    />
+      />
+    </>
   );
 }

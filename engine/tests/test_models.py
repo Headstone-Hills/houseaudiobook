@@ -3,14 +3,11 @@ progress, resume, checksum failures, cancel, and the API."""
 
 from __future__ import annotations
 
-import hashlib
-import threading
 from collections.abc import Iterator
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
 
 import pytest
+from fakehf import FakeHub, fake_model
 from fastapi.testclient import TestClient
 
 from hillaudio.api.app import create_app
@@ -19,70 +16,13 @@ from hillaudio.asr import models
 from hillaudio.progress import Cancelled
 
 WEIGHTS = bytes(range(256)) * 9000  # 2.3 MB: several 1 MB chunks
-CONFIG = b'{"fake": true}'
-
-
-def git_sha1(b: bytes) -> str:
-    return hashlib.sha1(b"blob %d\0" % len(b) + b).hexdigest()
-
-
-FAKE = models.Model(
-    "fake.en",
-    "Org/fake-model",
-    "abc123",
-    "MIT",
-    (
-        models.ModelFile("config.json", len(CONFIG), git_sha1=git_sha1(CONFIG)),
-        models.ModelFile("model.bin", len(WEIGHTS), hashlib.sha256(WEIGHTS).hexdigest()),
-    ),
-)
-
-
-class Server:
-    def __init__(self) -> None:
-        self.files = {"config.json": CONFIG, "model.bin": WEIGHTS}
-        self.requests: list[tuple[str, str | None]] = []
-        self.fail_after: int | None = None  # bytes of model.bin before dropping
-        srv = self
-
-        class H(BaseHTTPRequestHandler):
-            def log_message(self, *a: Any) -> None:
-                pass
-
-            def do_GET(self) -> None:
-                srv.requests.append((self.path, self.headers.get("Range")))
-                prefix = f"/{FAKE.repo}/resolve/{FAKE.revision}/"
-                name = self.path[len(prefix) :] if self.path.startswith(prefix) else None
-                body = srv.files.get(name or "")
-                if body is None:
-                    self.send_response(404)
-                    self.end_headers()
-                    return
-                start = 0
-                rng = self.headers.get("Range")
-                if rng:
-                    start = int(rng.split("=")[1].split("-")[0])
-                    self.send_response(206)
-                else:
-                    self.send_response(200)
-                part = body[start:]
-                self.send_header("Content-Length", str(len(part)))
-                self.end_headers()
-                if srv.fail_after is not None and name == "model.bin":
-                    self.wfile.write(part[: srv.fail_after])
-                    self.wfile.flush()
-                    self.connection.shutdown(2)  # the connection drops mid-file
-                    return
-                self.wfile.write(part)
-
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)
-        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
-        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
+FAKE, FILES = fake_model("fake.en", WEIGHTS, repo="Org/fake-model")
 
 
 @pytest.fixture
-def hf(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Server]:
-    s = Server()
+def hf(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeHub]:
+    s = FakeHub()
+    s.add(FAKE, FILES)
     monkeypatch.setenv("HILLAUDIO_MODEL_ENDPOINT", s.url)
     monkeypatch.setenv("HILLAUDIO_MODELS", str(tmp_path / "models"))
     monkeypatch.setitem(models.CATALOG, FAKE.name, FAKE)
@@ -90,7 +30,7 @@ def hf(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Server]:
     s.httpd.shutdown()
 
 
-def test_download_verifies_and_installs(hf: Server, tmp_path: Path) -> None:
+def test_download_verifies_and_installs(hf: FakeHub, tmp_path: Path) -> None:
     seen: list[float] = []
     path = models.download("fake.en", lambda f, _m: seen.append(f))
     assert path == tmp_path / "models" / "fake.en"
@@ -103,7 +43,7 @@ def test_download_verifies_and_installs(hf: Server, tmp_path: Path) -> None:
     assert models.download("fake.en") == path and hf.requests == []  # already there
 
 
-def test_an_interrupted_download_resumes(hf: Server, tmp_path: Path) -> None:
+def test_an_interrupted_download_resumes(hf: FakeHub, tmp_path: Path) -> None:
     hf.fail_after = 1_500_000
     with pytest.raises(models.ModelError, match="resumes"):
         models.download("fake.en")
@@ -118,8 +58,9 @@ def test_an_interrupted_download_resumes(hf: Server, tmp_path: Path) -> None:
     assert models.local_dir(FAKE) is not None
 
 
-def test_a_bad_checksum_is_discarded(hf: Server, tmp_path: Path) -> None:
-    hf.files["model.bin"] = WEIGHTS[:-1] + b"X"  # same size, different content
+def test_a_bad_checksum_is_discarded(hf: FakeHub, tmp_path: Path) -> None:
+    key = next(k for k in hf.files if k.endswith("model.bin"))
+    hf.files[key] = WEIGHTS[:-1] + b"X"  # same size, different content
     with pytest.raises(models.ModelError, match="checksum"):
         models.download("fake.en")
     d = tmp_path / "models" / "fake.en"
@@ -127,7 +68,7 @@ def test_a_bad_checksum_is_discarded(hf: Server, tmp_path: Path) -> None:
     assert models.local_dir(FAKE) is None
 
 
-def test_cancel_keeps_the_partial_file_for_later(hf: Server, tmp_path: Path) -> None:
+def test_cancel_keeps_the_partial_file_for_later(hf: FakeHub, tmp_path: Path) -> None:
     calls = {"n": 0}
 
     def cancel_after_one_chunk() -> None:
@@ -141,14 +82,14 @@ def test_cancel_keeps_the_partial_file_for_later(hf: Server, tmp_path: Path) -> 
     assert models.local_dir(FAKE) is None
 
 
-def test_remove_and_unknown(hf: Server) -> None:
+def test_remove_and_unknown(hf: FakeHub) -> None:
     models.download("fake.en")
     assert models.remove("fake.en") and models.local_dir(FAKE) is None
     with pytest.raises(models.ModelError):
         models.get("huge-v9")
 
 
-def test_api(hf: Server, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_api(hf: FakeHub, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HILLAUDIO_HOME", str(tmp_path / "home"))
     with TestClient(create_app(hosts=DEFAULT_HOSTS | {"testserver"})) as c:
         v = c.get("/api/models").json()
@@ -176,7 +117,7 @@ def test_api(hf: Server, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
         assert all(m["downloaded"] is False for m in info["models"])
 
 
-def test_transcription_needs_a_downloaded_model(hf: Server) -> None:
+def test_transcription_needs_a_downloaded_model(hf: FakeHub) -> None:
     pytest.importorskip("faster_whisper")
     from hillaudio.asr.base import AsrSettings, AsrUnavailable
     from hillaudio.asr.whisper import _model

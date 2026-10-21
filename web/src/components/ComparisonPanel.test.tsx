@@ -85,7 +85,7 @@ test("runs the analysis and shows sentences with differences by default", async 
   expect(inTakes).toBeVisible();
   expect(screen.queryByText("Chapter One.")).not.toBeInTheDocument(); // clean: filtered out
   expect(screen.getByText(/Hold on, let me get some water/)).toBeInTheDocument();
-  expect(screen.getByText(/about 464 MB/)).toBeInTheDocument();
+  expect(screen.getByText(/audio never leaves the machine/)).toBeInTheDocument();
 
   fireEvent.click(screen.getByLabelText("Not read"));
   expect(screen.getByText("Never read.")).toBeInTheDocument();
@@ -108,4 +108,14 @@ test("out-of-date results ask for a re-run instead of showing", async () => {
   render(<ComparisonPanel canRun why={null} revision={0} onError={() => {}} />);
   expect(await screen.findByText(/pages changed after this comparison/)).toBeInTheDocument();
   expect(screen.queryByRole("list", { name: "Sentences" })).not.toBeInTheDocument();
+});
+
+test("a model that isn't downloaded yet can't run (regression: no silent download)", async () => {
+  mockApi({
+    "GET /api/asr": { ...ASR, models: [{ name: "small.en", size_mb: 486, downloaded: false }] },
+    "GET /api/project/comparison": null,
+  });
+  render(<ComparisonPanel canRun why={null} revision={0} onError={() => undefined} />);
+  expect(await screen.findByText(/Download the small.en model first \(about 486 MB/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Transcribe and compare" })).toBeDisabled();
 });

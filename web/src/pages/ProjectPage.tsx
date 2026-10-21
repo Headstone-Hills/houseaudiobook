@@ -38,6 +38,7 @@ export function ProjectPage({ project, jobs, peakSettings, pageDefaults, onChang
   const selected = project.sources.find((s) => s.id === selectedId) ?? project.sources[0];
   const manuscriptRevision = jobs.filter((j) => j.kind === "manuscript" && j.status === "done").length;
   const analysisRevision = jobs.filter((j) => j.kind === "analysis" && j.status === "done").length;
+  const modelRevision = jobs.filter((j) => j.kind === "model" && j.status === "done").length;
   const analysisBlocker = !project.sources.length
     ? "Import audio first."
     : !project.manuscript
@@ -99,6 +100,7 @@ export function ProjectPage({ project, jobs, peakSettings, pageDefaults, onChang
         canRun={analysisBlocker === null}
         why={analysisBlocker}
         revision={analysisRevision + manuscriptRevision}
+        modelRevision={modelRevision}
         onError={addError}
       />
 

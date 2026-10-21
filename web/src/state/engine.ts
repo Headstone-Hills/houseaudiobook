@@ -131,7 +131,7 @@ export interface ManuscriptPreview {
 
 export interface AsrInfo {
   installed: boolean;
-  models: { name: string; size_mb: number }[];
+  models: { name: string; size_mb: number; downloaded?: boolean }[];
   default: { model: string };
 }
 
@@ -469,6 +469,16 @@ export interface GuideRow {
   status: string;
 }
 
+export interface SpeechModel {
+  name: string;
+  repo: string;
+  revision: string;
+  license: string;
+  size_mb: number;
+  installed: boolean;
+  job_id: string | null;
+}
+
 /** Where a manuscript comes from: a local path, an upload, or the project's copy. */
 export type ManuscriptSource = { path: string } | { upload_id: string } | { current: true };
 
@@ -545,6 +555,9 @@ export const api = {
   remapManuscript: (settings: Partial<PageSettings>) =>
     request<{ job_id: string }>("PUT", "/api/project/manuscript/settings", { settings }),
   asrInfo: () => request<AsrInfo>("GET", "/api/asr"),
+  models: () => request<{ dir: string; source: string; models: SpeechModel[] }>("GET", "/api/models"),
+  downloadModel: (name: string) => request<{ job_id: string }>("POST", `/api/models/${name}/download`),
+  removeModel: (name: string) => request<{ removed: boolean }>("DELETE", `/api/models/${name}`),
   /** model: null when no stage transcribes (checks only). */
   runAnalysis: (stages: string[] | null, model: string | null) =>
     request<{ job_id: string }>("POST", "/api/project/analysis", { stages, asr: model ? { model } : {} }),

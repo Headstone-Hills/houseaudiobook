@@ -15,13 +15,14 @@ interface Props {
   canRun: boolean;
   why: string | null; // why running isn't possible yet
   revision: number; // bumped when an analysis job finishes
+  modelRevision?: number; // bumped when a model download finishes
   onError: (msg: string) => void;
 }
 
 /** Transcribe + Compare to Text (SPEC §6.3 steps 1 and 3): run it (with the
  * project's checks), then read the per-sentence results. What needs fixing is
  * in the Issues panel. */
-export function ComparisonPanel({ canRun, why, revision, onError }: Props) {
+export function ComparisonPanel({ canRun, why, revision, modelRevision = 0, onError }: Props) {
   const [asr, setAsr] = useState<AsrInfo | null>(null);
   const [model, setModel] = useState("");
   const [data, setData] = useState<Comparison | null>(null);
@@ -32,10 +33,10 @@ export function ComparisonPanel({ canRun, why, revision, onError }: Props) {
       .asrInfo()
       .then((info) => {
         setAsr(info);
-        setModel(info.default.model);
+        setModel((m) => m || info.default.model);
       })
       .catch(() => undefined);
-  }, []);
+  }, [modelRevision]);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,7 +56,9 @@ export function ComparisonPanel({ canRun, why, revision, onError }: Props) {
   const counts = { clean: 0, differences: 0, "not-read": 0 };
   data?.sentences.forEach((s) => counts[status(s)]++);
   const shown = data?.sentences.filter((s) => filter === "all" || status(s) === filter) ?? [];
-  const size = asr?.models.find((m) => m.name === model)?.size_mb;
+  const chosen = asr?.models.find((m) => m.name === model);
+  const size = chosen?.size_mb;
+  const notDownloaded = chosen?.downloaded === false;
 
   return (
     <section aria-labelledby="compare-heading" className="comparison">
@@ -70,7 +73,7 @@ export function ComparisonPanel({ canRun, why, revision, onError }: Props) {
             </option>
           ))}
         </select>
-        <button type="button" onClick={run} disabled={!canRun || !asr?.installed}>
+        <button type="button" onClick={run} disabled={!canRun || !asr?.installed || notDownloaded}>
           Transcribe and compare
         </button>
       </div>
@@ -78,7 +81,9 @@ export function ComparisonPanel({ canRun, why, revision, onError }: Props) {
         {asr && !asr.installed
           ? "Speech recognition isn't installed in this engine."
           : (why ??
-            `Runs on this computer. The first use downloads the ${model} model${size ? ` (about ${size} MB)` : ""}; audio never leaves the machine.`)}
+            (notDownloaded
+              ? `Download the ${model} model first (about ${size} MB, under Speech models at the top).`
+              : "Runs on this computer; audio never leaves the machine."))}
       </p>
 
       {data?.stale && (
