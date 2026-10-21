@@ -174,8 +174,9 @@ def test_m2_manuscript_workflows_leave_originals_untouched(
 def test_m3_m4_analysis_leaves_sources_untouched(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Transcribe, Compare to Text, cleanup, the issue checks, decisions, edits,
-    undo/redo, excerpts and renders only read the sources (one referenced in place)."""
+    """Transcribe, Compare to Text, cleanup, takes, the issue checks, decisions,
+    edits, undo/redo, excerpts and renders only read the sources (one referenced
+    in place)."""
     from fakeasr import FakeTranscriber
 
     monkeypatch.setenv("HILLAUDIO_HOME", str(tmp_path / "home"))
@@ -233,5 +234,14 @@ def test_m3_m4_analysis_leaves_sources_untouched(
         c.post("/api/project/edl/undo")
         c.post("/api/project/edl/redo")
         r = c.get("/api/project/edl/render", params={"start": 0, "end": 20})
+        assert r.status_code == 200
+        # M6: choosing takes moves a pickup across recordings; then render again.
+        groups = c.get("/api/project/takes").json()["groups"]
+        assert groups
+        for g in groups:
+            other = next(t for t in g["takes"] if t["status"] != "preferred")
+            c.post(f"/api/project/takes/{g['id']}/choose", json={"take_id": other["id"]})
+            c.post(f"/api/project/takes/{g['id']}/back")
+        r = c.get("/api/project/edl/render", params={"start": 10, "end": 40})
         assert r.status_code == 200
     assert {p: fingerprint(p) for p in originals} == before

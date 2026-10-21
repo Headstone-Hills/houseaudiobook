@@ -57,6 +57,7 @@ def run_analysis(state: State, body: AnalysisRequest) -> dict[str, str]:
             "transcribe": "Transcribe",
             "compare_text": "Compare to Text",
             "cleanup": "Clean up",
+            "takes": "Compare takes",
             "flubs": "Flag flubs",
             "silences": "Flag silences",
         }[s]

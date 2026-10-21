@@ -164,6 +164,35 @@ def _apply(conn: sqlite3.Connection, table: str, key: Any, value: Any) -> None:
         _write(conn, table, value)
 
 
+def _write_changes(conn: sqlite3.Connection, changes: Sequence[Change]) -> list[dict[str, Any]]:
+    """Write changes now; return their log entries. Several batches can be
+    written in turn (each computed against the last) and logged as one entry."""
+    entries = []
+    for table, before, after in changes:
+        if before == after:
+            continue
+        key = None if table == "edl_segment" else (after or before)["id"]
+        _apply(conn, table, key, after)
+        entries.append({"table": table, "id": key, "before": before, "after": after})
+    return entries
+
+
+def _log_entries(
+    project: Project,
+    conn: sqlite3.Connection,
+    op_type: str,
+    entries: list[dict[str, Any]],
+    origin: Origin,
+    summary: str,
+    extra: dict[str, Any] | None = None,
+) -> int | None:
+    if not entries:
+        return None
+    return project.log(
+        conn, op_type, {"summary": summary, "changes": entries, **(extra or {})}, origin
+    )
+
+
 def _commit(
     project: Project,
     conn: sqlite3.Connection,
@@ -174,16 +203,8 @@ def _commit(
     extra: dict[str, Any] | None = None,
 ) -> int | None:
     """Write changes and log them as one undoable entry. None: nothing changed."""
-    changes = [(tb, b, a) for tb, b, a in changes if b != a]
-    if not changes:
-        return None
-    entries = []
-    for table, before, after in changes:
-        key = None if table == "edl_segment" else (after or before)["id"]
-        _apply(conn, table, key, after)
-        entries.append({"table": table, "id": key, "before": before, "after": after})
-    payload = {"summary": summary, "changes": entries, **(extra or {})}
-    return project.log(conn, op_type, payload, origin)
+    entries = _write_changes(conn, changes)
+    return _log_entries(project, conn, op_type, entries, origin, summary, extra)
 
 
 def _r(before: dict[str, Any] | None, after: dict[str, Any] | None) -> Change:

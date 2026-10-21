@@ -18,16 +18,19 @@ import numpy as np
 from hillaudio import issue_store
 from hillaudio.analysis import cleanup as cl
 from hillaudio.analysis import compare as cmp
+from hillaudio.analysis import takes as tk
 from hillaudio.analysis.boundaries import Envelope, EnvelopeBuilder, speech_mask
 from hillaudio.asr import cache as asr_cache
 from hillaudio.asr.base import Transcriber, TranscriptWord
 from hillaudio.edl import store as edl_store
+from hillaudio.edl import take_store
 from hillaudio.ingest.decode import iter_blocks
 from hillaudio.progress import Cancelled, CheckCancel, Progress, never_cancel, no_progress
 from hillaudio.store.project import Project, Source, now_iso
 
-# Cleanup runs before the checks, so they see the edited timeline (SPEC §6.7).
-STAGES = ("transcribe", "compare_text", "cleanup", "flubs", "silences")
+# Cleanup and takes run before the checks, so they see the edited timeline
+# (SPEC §6.7): flubs are judged on the preferred take.
+STAGES = ("transcribe", "compare_text", "cleanup", "takes", "flubs", "silences")
 # Issue kinds each checking stage produces (and so may auto-resolve).
 STAGE_KINDS = {"flubs": ["flub", "missing_line"], "silences": ["silence"]}
 ENVELOPE_KEY = "env-v1-10ms"
@@ -188,10 +191,11 @@ def run_analysis(
         raise PipelineError("Compare to Text needs a manuscript; import one first")
 
     compare_run = None
-    if "flubs" in stages and "compare_text" not in stages:
+    if {"flubs", "takes"} & set(stages) and "compare_text" not in stages:
         compare_run = latest_run(project)
         if compare_run is None or is_stale(project, compare_run):
-            raise PipelineError("flagging flubs needs an up-to-date Compare to Text; run it first")
+            what = "flagging flubs" if "flubs" in stages else "comparing takes"
+            raise PipelineError(f"{what} needs an up-to-date Compare to Text; run it first")
     if (
         ("silences" in stages or "cleanup" in stages)
         and "compare_text" not in stages
@@ -244,6 +248,9 @@ def run_analysis(
         if "cleanup" in stages:
             progress(0.95, "finding stutters, false starts and commentary")
             summary["cleanup"] = cleanup(project, run_id, compare_run, check_cancel)
+        if "takes" in stages and compare_run is not None:
+            progress(0.96, "comparing takes")
+            summary["takes"] = takes(project, run_id, compare_run, check_cancel)
         kinds = [k for s in stages for k in STAGE_KINDS.get(s, [])]
         if kinds:
             progress(0.97, "checking for issues")
@@ -294,6 +301,44 @@ def cleanup(
         mine = [r for r in readings if r.source_id == src.id]
         found += cl.cuts(src.id, src.sha256, sents, mine, gaps, words, mask, env.fps, s)
     return edl_store.apply_cleanup(project, run_id, found, s)
+
+
+# -- takes ---------------------------------------------------------------------------------------
+
+
+def takes(
+    project: Project, run_id: int, compare_run: int, check_cancel: CheckCancel = never_cancel
+) -> dict[str, int]:
+    """Lines read more than once: groups, ranked, suggestions applied (D-044)."""
+    sources = project.sources()
+    levels: dict[int, tk.Level] = {}
+    onsets: dict[int, list[float]] = {}
+    for src in sources:
+        check_cancel()
+        env = envelope(project, src, check_cancel)
+        levels[src.id] = tk.Level(env.db, speech_mask(env), env.fps)
+        onsets[src.id] = [w.start for w in transcript(project, src.id)]
+    # Readings already cut by cleanup (or the user) aren't takes; take cuts are.
+    cut: dict[int, list[tuple[float, float]]] = {}
+    rates = {s.id: s.sample_rate for s in sources}
+    for r in edl_store.regions(project):
+        if r["status"] == "removed" and r["kind"] != "take":
+            sr = rates[r["source_file_id"]]
+            cut.setdefault(r["source_file_id"], []).append(
+                (r["start_sample"] / sr, r["end_sample"] / sr)
+            )
+    found = tk.groups(
+        issue_store.sentence_infos(project),
+        issue_store.reading_infos(project, compare_run),
+        source_keys={s.id: s.sha256 for s in sources},
+        source_order={s.id: s.order_index for s in sources},
+        durations={s.id: s.duration for s in sources},
+        onsets=onsets,
+        cut=cut,
+        levels=levels,
+        settings=issue_store.settings(project),
+    )
+    return take_store.apply_detection(project, run_id, found)
 
 
 # -- results -------------------------------------------------------------------------------------

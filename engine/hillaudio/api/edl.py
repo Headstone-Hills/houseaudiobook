@@ -109,7 +109,7 @@ def get_edl(state: State) -> dict[str, Any]:
     return _edl(state.require_project())
 
 
-def _guarded(state: EngineState) -> Project:
+def editable_project(state: EngineState) -> Project:
     p = state.require_project()
     # Edits and a running cleanup would interleave their undo entries.
     if any(j.kind == "analysis" and j.status not in TERMINAL for j in state.jobs.all()):
@@ -119,7 +119,7 @@ def _guarded(state: EngineState) -> Project:
 
 @router.post("/api/project/edl/regions/status")
 def set_status(state: State, body: StatusChange) -> dict[str, Any]:
-    p = _guarded(state)
+    p = editable_project(state)
     try:
         store.set_status(p, body.ids, body.status)
     except store.EdlError as e:
@@ -138,7 +138,7 @@ def _sr(p: Project, rid: int) -> int:
 
 @router.patch("/api/project/edl/regions/{rid}")
 def edit_bounds(state: State, rid: int, body: Bounds) -> dict[str, Any]:
-    p = _guarded(state)
+    p = editable_project(state)
     sr = _sr(p, rid)
     try:
         store.edit_bounds(
@@ -154,14 +154,14 @@ def edit_bounds(state: State, rid: int, body: Bounds) -> dict[str, Any]:
 
 @router.post("/api/project/edl/regions/{rid}/roll")
 def roll(state: State, rid: int, body: Roll) -> dict[str, Any]:
-    p = _guarded(state)
+    p = editable_project(state)
     store.roll(p, rid, round(body.delta * _sr(p, rid)))
     return _edl(p)
 
 
 @router.post("/api/project/edl/cut")
 def cut(state: State, body: NewCut) -> dict[str, Any]:
-    p = _guarded(state)
+    p = editable_project(state)
     try:
         sr = p.source(body.source_id).sample_rate
     except KeyError:
@@ -175,7 +175,7 @@ def cut(state: State, body: NewCut) -> dict[str, Any]:
 
 @router.post("/api/project/edl/undo")
 def undo(state: State) -> dict[str, Any]:
-    p = _guarded(state)
+    p = editable_project(state)
     if store.undo(p) is None:
         raise HTTPException(409, "nothing to undo")
     return _edl(p)
@@ -183,7 +183,7 @@ def undo(state: State) -> dict[str, Any]:
 
 @router.post("/api/project/edl/redo")
 def redo(state: State) -> dict[str, Any]:
-    p = _guarded(state)
+    p = editable_project(state)
     if store.redo(p) is None:
         raise HTTPException(409, "nothing to redo")
     return _edl(p)
@@ -196,7 +196,7 @@ def history(state: State) -> dict[str, Any]:
 
 @router.post("/api/project/issues/{issue_id}/shorten")
 def shorten(state: State, issue_id: int, body: Shorten) -> dict[str, Any]:
-    p = _guarded(state)
+    p = editable_project(state)
     issue = next((i for i in issue_store.list_issues(p) if i["id"] == issue_id), None)
     if issue is None:
         raise HTTPException(404, "no such issue")

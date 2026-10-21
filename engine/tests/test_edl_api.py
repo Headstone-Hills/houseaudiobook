@@ -30,10 +30,12 @@ def project(c: TestClient) -> Project:
     return p
 
 
+# M5 behaviour on its own: everything but take comparison (M6 has test_takes_api).
+M5_STAGES = ["transcribe", "compare_text", "cleanup", "flubs", "silences"]
+
+
 def run(c: TestClient, stages: list[str] | None = None) -> dict[str, Any]:
-    job = wait(
-        c, c.post("/api/project/analysis", json={} if stages is None else {"stages": stages})
-    )
+    job = wait(c, c.post("/api/project/analysis", json={"stages": stages or M5_STAGES}))
     assert job["status"] == "done", job
     return job
 
