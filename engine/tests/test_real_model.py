@@ -10,6 +10,8 @@ every read sentence found, the injected misread and skip flagged, no false flags
 M4 acceptance: the Issues list is exactly the skip and the two long pauses.
 M5 acceptance: cleanup removes exactly the stutters, false start and commentary,
 and no line that must stay.
+M6 acceptance: the two lines read twice are grouped; the clean pickup is chosen
+over the misread take, confidently.
 """
 
 from __future__ import annotations
@@ -109,7 +111,7 @@ def test_small_en_finds_exactly_the_injected_errors(client: TestClient, tmp_path
     # M5: what cleanup removed, against the ground truth.
     from fakeasr import TRUTH
 
-    regions = client.get("/api/project/edl").json()["regions"]
+    regions = [r for r in client.get("/api/project/edl").json()["regions"] if r["kind"] != "take"]
     print("real cleanup:", [(r["source_label"], r["kind"], r["start"], r["end"]) for r in regions])
     truth = sorted(
         (f["name"][:-4], e["type"], e["start"], e["end"])
@@ -122,3 +124,11 @@ def test_small_en_finds_exactly_the_injected_errors(client: TestClient, tmp_path
     assert all(r["status"] == "removed" for r in regions)
     for g, w in zip(got, truth, strict=True):
         assert abs(g[2] - w[2]) < 0.1 and abs(g[3] - w[3]) < 0.1, (g, w)
+
+    # M6: take groups.
+    groups = client.get("/api/project/takes").json()["groups"]
+    by_text = {g["sentence_text"][:12]: g for g in groups}
+    assert set(by_text) == {"But it was a", "The hare soo"}
+    s04 = by_text["But it was a"]
+    pref = next(t for t in s04["takes"] if t["status"] == "preferred")
+    assert pref["source_label"] == "ch01_take2" and s04["confident"]

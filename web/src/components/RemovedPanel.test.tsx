@@ -161,4 +161,16 @@ describe("RemovedPanel", () => {
     expect(await screen.findByText(/Saved/)).toBeInTheDocument();
     expect(calls(fetch, "PUT")[0]?.[1]).toMatchObject({ commentary: false, auto_apply: 0.9 });
   });
+
+  test("take cuts are counted but chosen in the Takes panel", async () => {
+    const takeCut = region({ id: 7, kind: "take", text: "out of sight", seconds: 3.4 });
+    const preferred = region({ id: 8, kind: "take", status: "restored", seconds: 3.4 });
+    mockApi({
+      "GET /api/project/edl": edl([STUTTER, takeCut, preferred]),
+      "GET /api/project/cleanup-settings": SETTINGS,
+    });
+    render(<RemovedPanel revision={0} onEdited={() => undefined} onError={() => undefined} />);
+    expect(await screen.findByText(/1 removed · 0 suggested · 0 restored · 1 other take \(see Takes\)/)).toBeInTheDocument();
+    expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2);
+  });
 });

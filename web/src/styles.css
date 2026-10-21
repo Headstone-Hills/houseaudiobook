@@ -108,3 +108,15 @@ button.link { background: none; border: none; padding: 0; color: inherit; text-d
 .issue-table tr.st-restored { opacity: 0.7; }
 .issue-table tr.st-suggested td:first-child { font-style: italic; }
 .history .hist-undone, .history .hist-dropped { color: var(--muted, #777); text-decoration: line-through; }
+
+/* Takes (M6) */
+.take-group:focus { outline: 2px solid var(--accent, #3b6fd8); outline-offset: 4px; }
+.take-group .run-row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0; }
+.take-list { list-style: none; padding-left: 0; }
+.take { border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; margin: 0.4rem 0; }
+.take-preferred { border-width: 2px; }
+.take-rejected { opacity: 0.6; }
+.take-cursor { outline: 2px dashed var(--accent, #3b6fd8); outline-offset: 2px; }
+.take-wave { width: 100%; max-width: 480px; height: 40px; display: block; color: var(--fg, #444); }
+.take .heard { margin: 0.25rem 0; }
+.take .actions button { margin-right: 0.35rem; }

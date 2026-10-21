@@ -70,12 +70,13 @@ test("clean up, review removed material, undo and redo", async ({ page }) => {
   const again = page.locator("section.removed");
   await expect(again.getByText(/4 removed · 0 suggested · 1 restored/)).toBeVisible({ timeout: 20_000 });
   await again.getByText("Edit history").click();
-  // Cleanup, restore (undone and redone: one entry), trim, shorten. A re-run that
-  // changes nothing adds no entry.
+  // Cleanup, takes, restore (undone and redone: one entry), trim, shorten. A
+  // re-run that changes nothing adds no entry.
   const history = again.getByRole("list", { name: "Edit history" }).getByRole("listitem");
-  await expect(history).toHaveCount(4);
+  await expect(history).toHaveCount(5);
   await expect(history.nth(0)).toContainText("Cleanup: 4 removed");
-  await expect(history.nth(3)).toContainText("Shorten pause");
+  await expect(history.nth(1)).toContainText("Takes: 2 lines with retakes");
+  await expect(history.nth(4)).toContainText("Shorten pause");
 
   expect(consoleErrors).toEqual([]);
 });

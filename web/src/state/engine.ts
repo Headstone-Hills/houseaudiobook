@@ -229,7 +229,7 @@ export interface IssueSettings {
   low_confidence: number;
 }
 
-export type RegionKind = "stutter" | "false_start" | "commentary" | "pause" | "cut";
+export type RegionKind = "stutter" | "false_start" | "commentary" | "pause" | "cut" | "take";
 export type RegionStatus = "removed" | "restored" | "suggested";
 
 /** Material taken out of the timeline (a removed region of one recording). */
@@ -276,6 +276,47 @@ export interface CleanupSettings {
   stutters: boolean;
   false_starts: boolean;
   commentary: boolean;
+}
+
+export type TakeStatus = "preferred" | "alternate" | "rejected";
+
+export interface Take {
+  id: number;
+  take_group_id: number;
+  source_file_id: number;
+  source_label: string;
+  start: number;
+  end: number;
+  span_end: number;
+  coverage: number;
+  score: number;
+  hard_errors: number;
+  soft_errors: number;
+  extras: number;
+  loudness_db: number | null;
+  rank: number;
+  status: TakeStatus;
+  decided_by: "auto" | "user";
+  heard: string;
+  diffs: ReadingDiff[];
+}
+
+export interface TakeGroup {
+  id: number;
+  manuscript_unit_id: number | null;
+  sentence_text: string;
+  page_label: string | null;
+  state: "suggested" | "confirmed";
+  confident: boolean;
+  reason: string;
+  previous_take_id: number | null;
+  takes: Take[]; // in recording order is up to the UI; ranked by the engine
+}
+
+export interface TakesResponse {
+  groups: TakeGroup[];
+  undo: string | null;
+  redo: string | null;
 }
 
 /** Where a manuscript comes from: a local path, an upload, or the project's copy. */
@@ -341,10 +382,10 @@ export const api = {
     request<{ job_id: string }>("POST", "/api/project/sources/import", { paths, mode }),
   relink: (sourceId: number, path: string) =>
     request<ProjectSummary>("POST", `/api/project/sources/${sourceId}/relink`, { path }),
-  peaks: (sourceId: number, level: number, start = 0) =>
+  peaks: (sourceId: number, level: number, start = 0, count?: number) =>
     request<PeaksResponse>(
       "GET",
-      `/api/project/sources/${sourceId}/peaks?level=${level}&start=${start}`,
+      `/api/project/sources/${sourceId}/peaks?level=${level}&start=${start}${count ? `&count=${count}` : ""}`,
     ),
   cancelJob: (jobId: string) => request<Job>("POST", `/api/jobs/${jobId}/cancel`),
   previewManuscript: (source: ManuscriptSource, settings: Partial<PageSettings>) =>
@@ -360,6 +401,13 @@ export const api = {
   comparison: () => request<Comparison | null>("GET", "/api/project/comparison"),
   issues: () => request<IssueList>("GET", "/api/project/issues"),
   edl: () => request<Edl>("GET", "/api/project/edl"),
+  takes: () => request<TakesResponse>("GET", "/api/project/takes"),
+  chooseTake: (groupId: number, takeId: number) =>
+    request<TakesResponse>("POST", `/api/project/takes/${groupId}/choose`, { take_id: takeId }),
+  takeBack: (groupId: number) => request<TakesResponse>("POST", `/api/project/takes/${groupId}/back`),
+  confirmTakes: (ids: number[]) => request<TakesResponse>("POST", "/api/project/takes/confirm", { ids }),
+  markTake: (takeId: number, status: "alternate" | "rejected") =>
+    request<TakesResponse>("POST", `/api/project/takes/take/${takeId}/mark`, { status }),
   setRegionStatus: (ids: number[], status: "removed" | "restored") =>
     request<Edl>("POST", "/api/project/edl/regions/status", { ids, status }),
   editRegion: (id: number, bounds: { start?: number; end?: number }) =>
@@ -389,8 +437,9 @@ export const api = {
 /** All buckets of one level. The engine pages large responses, and a 10-hour
  * hi-res file can exceed one page even at the coarsest level. */
 /** The audio around [start, end] (the engine adds ±3 s of context), as WAV. */
-export function excerptUrl(sourceId: number, start: number, end: number): string {
-  return `/api/project/sources/${sourceId}/excerpt?start=${start.toFixed(3)}&end=${end.toFixed(3)}`;
+export function excerptUrl(sourceId: number, start: number, end: number, context?: number): string {
+  const ctx = context === undefined ? "" : `&context=${context}`;
+  return `/api/project/sources/${sourceId}/excerpt?start=${start.toFixed(3)}&end=${end.toFixed(3)}${ctx}`;
 }
 
 /** The edited timeline [start, end) seconds, rendered from the sources, as WAV. */

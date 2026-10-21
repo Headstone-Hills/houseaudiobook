@@ -485,3 +485,53 @@ global alignment:
   boundary's natural pause, 0.6/1.2/2.0 s). It is one region per issue, so
   shortening again adjusts the same cut.
 
+## D-043 · Ordered segments (M6)
+- Choosing a pickup from another recording must play it where its line
+  belongs, which removed regions alone can't express. So the timeline is now
+  an ordered list of *segments* (recording, in, out), minus the removed
+  regions that fall inside them. The default is each recording once, in order,
+  and it is stored as an empty `edl_segment` table.
+- `place(segments, source, a, b, before)` moves [a, b) of a recording to play
+  just before a given (recording, sample). With no target it goes back home.
+  `normalize` merges neighbours that continue the same recording, so a move
+  and its return leave exactly the original segments, and undo-all is
+  sample-identical.
+- This is the first step of D-038's planned migration. Gain, fades and extra
+  tracks (M7) will become properties of segments and tracks.
+
+## D-044 · Take groups and ranking (M6)
+- A take is a reading of a sentence with coverage > 0.6 that isn't mostly cut
+  by cleanup. Fragments are false starts (D-040). Two or more takes make a
+  group, keyed by the sentence's text in context.
+- Rank, most important first:
+  1. complete;
+  2. real text errors (not likely mishearings, D-033);
+  3. likely mishearings;
+  4. non-repeat extra words;
+  5. loudness more than 3 dB from the narration's median (SPEC: "loudness
+     consistency");
+  6. alignment score;
+  7. the later take (narrators re-read because the earlier one was wrong).
+- The suggestion is *confident* when it wins on 1-3. Otherwise the UI says
+  "listen and confirm".
+- A take's span runs from its onset to the next speech onset in that recording
+  (or the file's end). Cutting a take keeps the pause before it.
+
+## D-045 · What choosing a take does (M6)
+- One undoable entry holds all of it:
+  - every other take is cut (a `take` region over its span) and the chosen
+    take's region is restored;
+  - the previous choice goes home;
+  - if the chosen take is in a different recording from the line's first
+    reading (in recording order), it is moved to play right before that
+    reading's span;
+  - the take statuses change, and the group is confirmed, remembering the
+    previous choice (for "back").
+- Detection applies its suggestions the same way, as one `auto` entry per run.
+  Re-running keeps existing groups and choices; new takes of a known line join
+  as alternates (cut).
+- Alternate and rejected are both off the timeline. "Rejected" is a label
+  ("don't consider this"), and the preferred take can't be rejected.
+- Take cuts appear only in the Takes panel. The Removed Material panel counts
+  them but doesn't offer to restore them, since that would play the line twice.
+

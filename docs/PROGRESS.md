@@ -199,30 +199,40 @@ Risks:
 - Commentary confidence relies on English keyword hints. Long hint-free passages are only suggested (they may be text missing from the manuscript).
 - Undo of a whole cleanup run is one step. Undoing it also undoes every cut it made; individual restores are separate steps.
 
-## M6 · Takes: in progress
+## M6 · Takes: done (2026-10-21)
 
-Plan:
-1. **`analysis/takes.py`** (pure).
-   - **Take groups:** a sentence read more than once, within or across recordings. Fragments (≤ 60% coverage) are false starts, not takes (D-040), and readings already cut by cleanup are ignored.
-   - **Ranking:** complete first, then fewest text errors, fewest extra words, loudness closest to the narration's median, highest score, and finally the later take (narrators re-read because the earlier one was wrong).
-   - **Suggestion:** a preferred take is suggested, marked "confident" only when it is clearly better than the runner-up.
-2. **Ordered segments** (`edl/model.py`, pure). The timeline becomes an ordered list of source segments, minus removed regions; the default is each recording once, in order. A pickup chosen from another file is *moved* to where the line belongs: before the first reading of that line.
-   - Undoing or changing the choice puts it back home; adjacent pieces merge again, so undoing everything returns exactly to the original.
-3. **Store.** Schema v6: `take_group`, `take`, `edl_segment`; region kind `take`.
-   - Choosing a take is one undoable entry: take statuses, the group, regions for the non-preferred takes, and the segment order.
-   - Detection applies the suggestion as one `auto` entry. Re-running keeps the user's choices (stable keys).
-   - The previous choice stays one click away.
-4. **Pipeline.** A `takes` stage after cleanup and before the checks, so flubs are judged on the preferred take.
-5. **API and UI: Takes panel** (SPEC §6.5).
-   - One group per line: the manuscript text, each take's transcript with differences highlighted, its waveform, score and loudness.
-   - Preferred / Alternate / Rejected; instant A/B switching; loop.
-   - Keyboard: 1-9 choose a take, Space play, ←/→ switch take, L loop, N / Shift+N next/previous group, C confirm, X reject, B back to the previous choice.
-6. **Tests.**
-   - Take-group precision/recall and suggestion accuracy on the fixtures, with perfect and noisy fake ASR, and real small.en.
-   - Choosing a take updates the EDL (order and cuts); the round trip after undo-all; re-run keeps choices; API, UI and e2e; immutability.
-- **Risks.**
-  - Per-sentence groups: a re-read paragraph becomes several groups (adjacent moved pieces merge, so playback is still continuous).
-  - Joins between recordings have no crossfade, and room tone may differ.
+Acceptance criteria (SPEC §9):
+- [x] **Take groups detected.**
+  - Fixtures, perfect fake ASR: precision/recall 1.0. The groups are the misread line with its pickup in another file, and a line read twice in one file.
+  - Suggestions: the clean pickup beats the misread take, confidently ("fewer text errors"). Two clean reads fall to the later take, marked for review.
+  - Loudness breaks ties (a take 12 dB quieter loses).
+  - Noisy fake ASR: no invented groups in any seed, and both groups are found in 10/10. When the pickup has fewer real errors it always wins; overall it wins in 7/10 seeds at 5% noise and 3/10 at 10%, because random noise words count as real errors.
+  - **Real small.en:** exactly the two groups, and the pickup is chosen confidently.
+- [x] **Comparison UI** (Takes panel, SPEC §6.5): the manuscript line; each take with recording, time, score, loudness, transcript, differences, waveform and status; play; A/B switching that keeps your place; loop.
+  - Keyboard: 1-9 choose, Space play, ←/→ switch take, L loop, N / Shift+N next/previous line, C confirm, X reject, B back.
+- [x] **Preferred take updates the EDL** (D-045).
+  - Other takes are cut, and a pickup from another recording is moved to where its line belongs (ordered segments, D-043).
+  - The previous choice is one click (or B) away, and every choice is undoable.
+  - Flubs are judged on the preferred take: choosing the misread take makes it a flub on the next check.
+- [x] Round trip with takes: choose, then undo all, renders sample-identical to the sources.
+- [x] Re-running keeps choices. A v5 project migrates with its regions intact.
+- [x] Immutability test covers take choices across recordings.
+
+`make check`: 252 engine tests (1 opt-in skipped), 39 web tests. `make e2e`: 6 tests.
+
+Fixed along the way, with regression tests:
+- One detection run applying several groups computed each group against stale state, so ids and the segment order would collide. Changes are now written as they are computed, and logged as one entry.
+- The Removed Material panel listed take cuts, and restoring one would make a line play twice. Take cuts are now counted there and chosen in the Takes panel.
+
+Deferred:
+- Groups spanning several sentences. Per-sentence groups merge adjacent moved pieces, so a re-read paragraph still plays continuously.
+- Synced playback of two takes at once, and loop-a-segment within a take. Looping plays the whole take.
+- "Organize and Label Files" (SPEC §6.3.2). Pickup placement covers the ordering that matters for takes.
+
+Risks:
+- Joins between recordings have no crossfade, and room tone may differ.
+- The "later take" tie-break is a convention, not a measurement. Such groups are flagged "listen and confirm".
+- A pickup's own leading room tone stays at its file's home position, so a short silence may sit between files.
 
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.

@@ -19,6 +19,7 @@ const REGION_LABELS: Record<RegionKind, string> = {
   commentary: "Commentary",
   pause: "Shortened pause",
   cut: "Cut",
+  take: "Other take",
 };
 const STATUS_LABELS: Record<RegionStatus, string> = {
   removed: "Removed",
@@ -85,12 +86,13 @@ export function RemovedPanel({ revision, onEdited, onError }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const shown = useMemo(
-    () => (edl?.regions ?? []).filter((r) => filter === "all" || r.status === filter),
-    [edl, filter],
-  );
+  // Takes are chosen in the Takes panel: restoring another take here would make
+  // the line play twice, so take cuts are only counted (D-045).
+  const listed = useMemo(() => (edl?.regions ?? []).filter((r) => r.kind !== "take"), [edl]);
+  const otherTakes = (edl?.regions ?? []).filter((r) => r.kind === "take" && r.status === "removed").length;
+  const shown = useMemo(() => listed.filter((r) => filter === "all" || r.status === filter), [listed, filter]);
   const current = shown.find((r) => r.id === currentId) ?? null;
-  const count = (s: RegionStatus) => edl?.regions.filter((r) => r.status === s).length ?? 0;
+  const count = (s: RegionStatus) => listed.filter((r) => r.status === s).length;
 
   const play = (src: string) => {
     const el = audio.current;
@@ -175,6 +177,7 @@ export function RemovedPanel({ revision, onEdited, onError }: Props) {
       <p aria-live="polite">
         Timeline {clock(edl.duration)} of {clock(edl.original_duration)} recorded · {removedS.toFixed(1)} s removed ·{" "}
         {count("removed")} removed · {count("suggested")} suggested · {count("restored")} restored
+        {otherTakes > 0 && ` · ${plural(otherTakes, "other take")} (see Takes)`}
       </p>
       <div className="run-row">
         <button type="button" onClick={() => apply(api.undo())} disabled={!edl.undo}>
@@ -266,7 +269,7 @@ export function RemovedPanel({ revision, onEdited, onError }: Props) {
         </table>
       ) : (
         <p className="muted">
-          {edl.regions.length ? "Nothing with this status." : "Nothing removed yet. Run the analysis to clean up."}
+          {listed.length ? "Nothing with this status." : "Nothing removed yet. Run the analysis to clean up."}
         </p>
       )}
 
