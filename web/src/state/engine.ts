@@ -319,6 +319,66 @@ export interface TakesResponse {
   redo: string | null;
 }
 
+export interface ClipRef {
+  clip_id?: number | null;
+  source_id?: number | null;
+  source_in?: number | null;
+}
+
+export interface TimelineClip {
+  ref: ClipRef;
+  track_id: number;
+  source_id: number;
+  source_label: string;
+  source_in: number; // seconds in the recording
+  source_out: number;
+  timeline_start: number; // seconds on the timeline
+  timeline_end: number;
+  gain_db: number;
+  fade_in: number;
+  fade_out: number;
+  muted: boolean;
+}
+
+export interface TimelineTrack {
+  id: number;
+  name: string;
+  kind: "narration" | "audio";
+  gain_db: number;
+  pan: number;
+  mute: boolean;
+  solo: boolean;
+}
+
+export interface TimelineView {
+  rate: number;
+  duration: number;
+  channels: number;
+  tracks: TimelineTrack[];
+  clips: TimelineClip[];
+  markers: { id: number; label: string; color: string; t: number | null }[];
+  issues: { id: number; kind: IssueKind; severity: IssueSeverity; t: number; color: string; label: string }[];
+  removed: {
+    id: number;
+    kind: RegionKind;
+    status: RegionStatus;
+    t: number | null;
+    seconds: number;
+    text: string;
+    source_id: number;
+    start: number;
+    end: number;
+  }[];
+  undo: string | null;
+  redo: string | null;
+}
+
+export interface Lanes {
+  words: { text: string; t0: number; t1: number }[];
+  sentences: { ordinal: number; t0: number; t1: number }[];
+  pauses: { t0: number; t1: number }[];
+}
+
 /** Where a manuscript comes from: a local path, an upload, or the project's copy. */
 export type ManuscriptSource = { path: string } | { upload_id: string } | { current: true };
 
@@ -402,6 +462,14 @@ export const api = {
   issues: () => request<IssueList>("GET", "/api/project/issues"),
   edl: () => request<Edl>("GET", "/api/project/edl"),
   takes: () => request<TakesResponse>("GET", "/api/project/takes"),
+  timeline: () => request<TimelineView>("GET", "/api/project/timeline"),
+  lanes: (start: number, end: number) =>
+    request<Lanes>("GET", `/api/project/timeline/lanes?start=${start.toFixed(3)}&end=${end.toFixed(3)}`),
+  tl: <T extends object>(path: string, body: T) =>
+    request<TimelineView>("POST", `/api/project/timeline/${path}`, body),
+  tlPatch: <T extends object>(path: string, body: T) =>
+    request<TimelineView>("PATCH", `/api/project/timeline/${path}`, body),
+  tlDelete: (path: string) => request<TimelineView>("DELETE", `/api/project/timeline/${path}`),
   chooseTake: (groupId: number, takeId: number) =>
     request<TakesResponse>("POST", `/api/project/takes/${groupId}/choose`, { take_id: takeId }),
   takeBack: (groupId: number) => request<TakesResponse>("POST", `/api/project/takes/${groupId}/back`),

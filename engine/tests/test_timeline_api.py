@@ -296,3 +296,39 @@ def test_bad_requests(client: TestClient) -> None:
     post(client, "move", {"ref": narration(tl(client))[0]["ref"], "t": 1, "track_id": 9}, 404)
     post(client, "tracks/1/add-source", {"source_id": 1, "t": 0}, 400)
     assert client.patch("/api/project/timeline/markers/5", json={"label": "x"}).status_code == 404
+
+
+def test_locator_matches_the_simple_mapping_on_a_big_book() -> None:
+    """The view maps thousands of issues/cuts/markers: binary search, same answers."""
+    import random
+    import time
+    from types import SimpleNamespace
+
+    from hillaudio.api.timeline import _Locator
+    from hillaudio.edl.model import Region, SourceInfo, default_segments, layout, place, to_timeline
+
+    rng = random.Random(3)
+    srcs = [SourceInfo(i, 48000, 48000 * 720) for i in range(1, 51)]  # 10 h
+    regs = []
+    for k in range(3000):
+        s, a = rng.randint(1, 50), rng.randint(0, 48000 * 700)
+        regs.append(Region(k, s, a, a + rng.randint(2000, 48000), "removed"))
+    segs = default_segments(srcs)
+    for _ in range(100):
+        s, a = rng.randint(1, 50), rng.randint(0, 48000 * 600)
+        segs = place(
+            segs, s, a, a + 48000 * 5, before=(rng.randint(1, 50), rng.randint(0, 48000 * 700))
+        )
+    clips = layout(srcs, regs, 48000, segs)
+    st = SimpleNamespace(clips=clips, sources={s.id: s for s in srcs}, rate=48000)
+    loc = _Locator(st)  # type: ignore[arg-type]
+    probes = [(rng.randint(1, 50), rng.randint(0, 48000 * 720 - 1)) for _ in range(3000)]
+    t0 = time.perf_counter()
+    fast = [loc.at_sample(s, x) for s, x in probes]
+    elapsed = time.perf_counter() - t0
+    slow = [to_timeline(clips, st.sources, 48000, s, x) for s, x in probes]
+    for f, sl in zip(fast, slow, strict=True):
+        assert (f is None) == (sl is None)
+        if f is not None and sl is not None:
+            assert f == pytest.approx(sl / 48000, abs=1 / 48000)
+    assert elapsed < 0.5, elapsed  # 3000 lookups on a 10 h timeline

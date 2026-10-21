@@ -103,23 +103,44 @@ class MarkerAttrs(BaseModel):
 # -- the view -------------------------------------------------------------------------------
 
 
-def _to_t(st: TState, source_id: int, seconds: float) -> float | None:
-    """A recording position (seconds) on the timeline (seconds); None if cut."""
-    src = st.sources.get(source_id)
-    if src is None:
-        return None
-    x = round(seconds * src.sample_rate)
-    for c in st.clips:
-        if c.track_id == NARRATION and c.source_id == source_id and c.source_in <= x < c.source_out:
-            return (
-                c.timeline_start + float(Fraction(x - c.source_in, src.sample_rate) * st.rate)
-            ) / st.rate
-    return None
+class _Locator:
+    """Recording position -> timeline position, by binary search over each
+    recording's narration clips (a 10 h book has thousands of clips and cuts)."""
+
+    def __init__(self, st: TState) -> None:
+        self.st = st
+        self.by_src: dict[int, list[Clip]] = {}
+        for c in st.clips:
+            if c.track_id == NARRATION:
+                self.by_src.setdefault(c.source_id, []).append(c)
+        for cs in self.by_src.values():
+            cs.sort(key=lambda c: c.source_in)
+        self.ins = {s: [c.source_in for c in cs] for s, cs in self.by_src.items()}
+
+    def at_sample(self, source_id: int, x: int) -> float | None:
+        cs = self.by_src.get(source_id)
+        if not cs:
+            return None
+        i = bisect.bisect_right(self.ins[source_id], x) - 1
+        # Moved pieces can overlap in source order only if the same audio plays
+        # twice, which the model never does: one candidate is enough.
+        if i < 0 or not cs[i].source_in <= x < cs[i].source_out:
+            return None
+        c = cs[i]
+        sr = self.st.sources[source_id].sample_rate
+        return (
+            c.timeline_start + float(Fraction(x - c.source_in, sr) * self.st.rate)
+        ) / self.st.rate
+
+    def at(self, source_id: int, seconds: float) -> float | None:
+        src = self.st.sources.get(source_id)
+        return None if src is None else self.at_sample(source_id, round(seconds * src.sample_rate))
 
 
 def view(p: Project) -> dict[str, Any]:
     st = timeline_store.load(p)
     r = st.rate
+    loc = _Locator(st)
 
     def clip(c: Clip) -> dict[str, Any]:
         sr = st.sources[c.source_id].sample_rate
@@ -147,7 +168,7 @@ def view(p: Project) -> dict[str, Any]:
     for i in issue_store.list_issues(p):
         if i["source_file_id"] is None or i["start"] is None or i["status"] != "open":
             continue
-        t = _to_t(st, i["source_file_id"], i["start"])
+        t = loc.at(i["source_file_id"], i["start"])
         if t is not None:
             issues.append(
                 {
@@ -165,7 +186,7 @@ def view(p: Project) -> dict[str, Any]:
             continue
         sr = st.sources[row["source_file_id"]].sample_rate
         # Where it would play: just after the kept audio before it.
-        t = _to_t(st, row["source_file_id"], max(0, row["start_sample"] - 1) / sr)
+        t = loc.at_sample(row["source_file_id"], max(0, row["start_sample"] - 1))
         removed.append(
             {
                 "id": row["id"],
@@ -181,15 +202,12 @@ def view(p: Project) -> dict[str, Any]:
         )
     markers = []
     for m in st.markers:
-        t = timeline_store.marker_time(st, m)
-        markers.append(
-            {
-                "id": m["id"],
-                "label": m["label"],
-                "color": m["color"],
-                "t": None if t is None else t / r,
-            }
+        mt = (
+            m["sample"] / r
+            if m["source_file_id"] is None
+            else loc.at_sample(m["source_file_id"], int(m["sample"]))
         )
+        markers.append({"id": m["id"], "label": m["label"], "color": m["color"], "t": mt})
     h = store.history(p)
     return {
         "rate": r,

@@ -120,3 +120,22 @@ button.link { background: none; border: none; padding: 0; color: inherit; text-d
 .take-wave { width: 100%; max-width: 480px; height: 40px; display: block; color: var(--fg, #444); }
 .take .heard { margin: 0.25rem 0; }
 .take .actions button { margin-right: 0.35rem; }
+
+/* Timeline (M7) */
+.timeline .run-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0; }
+.timeline .timecode { font-variant-numeric: tabular-nums; min-width: 11ch; }
+.timeline-body { display: flex; align-items: flex-start; border: 1px solid var(--border); }
+.track-heads { flex: 0 0 12rem; border-right: 1px solid var(--border); }
+.track-head { display: flex; flex-wrap: wrap; gap: 0.15rem 0.3rem; align-content: flex-start; align-items: center; padding: 0.15rem 0.25rem; box-sizing: border-box; border-bottom: 1px solid var(--border); font-size: 0.8em; overflow: hidden; }
+.track-head label { display: inline-flex; gap: 0.2rem; align-items: center; margin: 0; }
+.track-head button { padding: 0 0.35rem; line-height: 1.4; }
+.track-head.current { background: rgba(59, 130, 246, 0.08); }
+.track-head input:not([type]) { width: 6.5rem; padding: 0 0.2rem; }
+.track-head input[type="number"] { width: 3rem; padding: 0 0.2rem; }
+.track-head input[type="range"] { width: 4rem; }
+.track-head button[aria-pressed="true"] { font-weight: 700; outline: 2px solid var(--accent, #3b6fd8); }
+.timeline-canvas { flex: 1 1 auto; overflow: hidden; min-width: 0; }
+.timeline-canvas:focus { outline: 2px solid var(--accent, #3b6fd8); outline-offset: -2px; }
+.timeline-canvas canvas { display: block; cursor: crosshair; touch-action: none; }
+.inspector { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin-top: 0.5rem; }
+.inspector input[type="number"] { width: 5rem; }

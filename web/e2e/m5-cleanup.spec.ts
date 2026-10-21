@@ -24,7 +24,7 @@ test("clean up, review removed material, undo and redo", async ({ page }) => {
   await page.getByRole("button", { name: "Import", exact: true }).click();
   await expect(page.locator("table.sources tbody tr")).toHaveCount(3, { timeout: 20_000 });
   await page.getByLabel("Or by path").fill(`${FIXTURES}/manuscript.txt`);
-  await page.getByRole("button", { name: "Preview" }).click();
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
   await page.getByRole("button", { name: "Import manuscript" }).click();
   await expect(page.getByText(/13 sentences/).first()).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: "Transcribe and compare" }).click();

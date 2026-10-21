@@ -6,6 +6,7 @@ import { IssuesPanel } from "../components/IssuesPanel";
 import { ManuscriptPanel } from "../components/ManuscriptPanel";
 import { RemovedPanel } from "../components/RemovedPanel";
 import { TakesPanel } from "../components/TakesPanel";
+import { TimelinePanel } from "../components/TimelinePanel";
 import { SourceTable } from "../components/SourceTable";
 import { Waveform } from "../components/Waveform";
 import type { Job, PageSettings, PeakSettings, ProjectSummary } from "../state/engine";
@@ -116,6 +117,16 @@ export function ProjectPage({ project, jobs, peakSettings, pageDefaults, onChang
       />
 
       <RemovedPanel revision={analysisRevision + manuscriptRevision + edlRevision} onEdited={edited} onError={addError} />
+
+      {project.sources.length > 0 && (
+        <TimelinePanel
+          sources={project.sources}
+          peakSettings={peakSettings}
+          revision={analysisRevision + manuscriptRevision + edlRevision + project.sources.length}
+          onEdited={edited}
+          onError={addError}
+        />
+      )}
     </main>
   );
 }
