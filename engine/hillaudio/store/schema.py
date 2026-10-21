@@ -198,6 +198,84 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX edit_region_source ON edit_region (source_file_id, start_sample);
     """,
+    # 6: takes and timeline order (M6, D-043/D-045). edit_region gains the kind
+    # 'take' (SQLite can't alter a CHECK, so the table is rebuilt, rows kept).
+    """
+    CREATE TABLE edit_region_v6 (
+        id             INTEGER PRIMARY KEY,
+        source_file_id INTEGER NOT NULL REFERENCES source_file(id),
+        start_sample   INTEGER NOT NULL,
+        end_sample     INTEGER NOT NULL,
+        kind           TEXT NOT NULL CHECK (
+                           kind IN ('stutter', 'false_start', 'commentary', 'pause', 'cut', 'take')
+                       ),
+        status         TEXT NOT NULL CHECK (status IN ('removed', 'restored', 'suggested')),
+        origin         TEXT NOT NULL CHECK (origin IN ('auto', 'user')),
+        decided_by     TEXT NOT NULL CHECK (decided_by IN ('auto', 'user')),
+        confidence     REAL,
+        reason         TEXT NOT NULL,
+        text           TEXT NOT NULL,
+        stable_key     TEXT UNIQUE,
+        issue_id       INTEGER REFERENCES issue(id) ON DELETE SET NULL,
+        run_id         INTEGER REFERENCES analysis_run(id),
+        detail_json    TEXT NOT NULL,
+        created_at     TEXT NOT NULL,
+        updated_at     TEXT NOT NULL,
+        CHECK (end_sample >= start_sample)
+    );
+    INSERT INTO edit_region_v6 SELECT * FROM edit_region;
+    DROP TABLE edit_region;
+    ALTER TABLE edit_region_v6 RENAME TO edit_region;
+    CREATE INDEX edit_region_source ON edit_region (source_file_id, start_sample);
+
+    -- The timeline's order: segments of recordings. Empty means the default,
+    -- each recording once in order; rows exist only once something was moved.
+    CREATE TABLE edl_segment (
+        id             INTEGER PRIMARY KEY,
+        position       INTEGER NOT NULL UNIQUE,
+        source_file_id INTEGER NOT NULL REFERENCES source_file(id),
+        source_in      INTEGER NOT NULL,
+        source_out     INTEGER NOT NULL,
+        CHECK (source_out >= source_in)
+    );
+
+    CREATE TABLE take_group (
+        id                 INTEGER PRIMARY KEY,
+        stable_key         TEXT NOT NULL UNIQUE,
+        manuscript_unit_id INTEGER REFERENCES manuscript_unit(id) ON DELETE SET NULL,
+        sentence_text      TEXT NOT NULL,
+        page_label         TEXT,
+        state              TEXT NOT NULL CHECK (state IN ('suggested', 'confirmed')),
+        confident          INTEGER NOT NULL,
+        reason             TEXT NOT NULL,
+        previous_take_id   INTEGER,  -- the choice before the current one
+        run_id             INTEGER REFERENCES analysis_run(id),
+        created_at         TEXT NOT NULL,
+        updated_at         TEXT NOT NULL
+    );
+
+    CREATE TABLE take (
+        id             INTEGER PRIMARY KEY,
+        take_group_id  INTEGER NOT NULL REFERENCES take_group(id),
+        stable_key     TEXT NOT NULL UNIQUE,
+        source_file_id INTEGER NOT NULL REFERENCES source_file(id),
+        start          REAL NOT NULL,
+        "end"          REAL NOT NULL,
+        span_end       REAL NOT NULL,
+        coverage       REAL NOT NULL,
+        score          REAL NOT NULL,
+        hard_errors    INTEGER NOT NULL,
+        soft_errors    INTEGER NOT NULL,
+        extras         INTEGER NOT NULL,
+        loudness_db    REAL,
+        rank           INTEGER NOT NULL,
+        status         TEXT NOT NULL CHECK (status IN ('preferred', 'alternate', 'rejected')),
+        decided_by     TEXT NOT NULL CHECK (decided_by IN ('auto', 'user')),
+        heard          TEXT NOT NULL,
+        diffs_json     TEXT NOT NULL
+    );
+    CREATE INDEX take_group_idx ON take (take_group_id, rank);
+    """,
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

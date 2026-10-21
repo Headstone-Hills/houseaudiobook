@@ -70,24 +70,112 @@ def merged(regions: Iterable[Region], source_id: int) -> list[tuple[int, int]]:
     return out
 
 
-def clips(sources: Sequence[SourceInfo], regions: Sequence[Region], rate: int) -> list[Clip]:
+@dataclass(frozen=True)
+class Segment:
+    """A stretch of one recording, in timeline order (M6, D-043)."""
+
+    source_id: int
+    source_in: int
+    source_out: int
+
+
+def default_segments(sources: Sequence[SourceInfo]) -> list[Segment]:
+    """Each recording once, in order: the timeline before anything is moved."""
+    return [Segment(s.id, 0, s.num_frames) for s in sources]
+
+
+def normalize(segs: Sequence[Segment]) -> list[Segment]:
+    """Drop empty segments and merge neighbours that continue the same recording,
+    so moving a piece away and back leaves exactly the segments it started with."""
+    out: list[Segment] = []
+    for s in segs:
+        if s.source_out <= s.source_in:
+            continue
+        if out and out[-1].source_id == s.source_id and out[-1].source_out == s.source_in:
+            out[-1] = Segment(s.source_id, out[-1].source_in, s.source_out)
+        else:
+            out.append(s)
+    return out
+
+
+def _without(segs: Sequence[Segment], source_id: int, a: int, b: int) -> list[Segment]:
+    out: list[Segment] = []
+    for s in segs:
+        if s.source_id != source_id or s.source_out <= a or s.source_in >= b:
+            out.append(s)
+            continue
+        out.append(Segment(source_id, s.source_in, max(s.source_in, a)))
+        out.append(Segment(source_id, min(s.source_out, b), s.source_out))
+    return [s for s in out if s.source_out > s.source_in]
+
+
+def place(
+    segs: Sequence[Segment],
+    source_id: int,
+    a: int,
+    b: int,
+    before: tuple[int, int] | None = None,
+) -> list[Segment]:
+    """Move [a, b) of a recording so it plays just before `before` = (source,
+    sample); None puts it back where it naturally belongs in its own recording."""
+    rest = _without(segs, source_id, a, b)
+    piece = Segment(source_id, a, b)
+    at: int | None = None
+    if before is not None:
+        bs, x = before
+        for i, s in enumerate(rest):
+            if s.source_id == bs and s.source_in <= x < s.source_out:
+                head, tail = Segment(bs, s.source_in, x), Segment(bs, x, s.source_out)
+                rest[i : i + 1] = [head, tail]
+                at = i + 1
+                break
+    if at is None:
+        # Home: after the piece of its recording that ends where it starts, or
+        # before the one that starts where it ends, or else by source position.
+        mine = [(i, s) for i, s in enumerate(rest) if s.source_id == source_id]
+        at = next((i + 1 for i, s in mine if s.source_out == a), None)
+        if at is None:
+            at = next((i for i, s in mine if s.source_in == b), None)
+        if at is None:
+            earlier = [i for i, s in mine if s.source_out <= a]
+            later = [i for i, s in mine if s.source_in >= b]
+            at = earlier[-1] + 1 if earlier else (later[0] if later else len(rest))
+    rest.insert(at, piece)
+    return normalize(rest)
+
+
+def clips(
+    sources: Sequence[SourceInfo],
+    regions: Sequence[Region],
+    rate: int,
+    segments: Sequence[Segment] | None = None,
+) -> list[Clip]:
+    """The timeline: segments in order (default: each recording once), each minus
+    the removed regions that fall inside it."""
+    by_id = {s.id: s for s in sources}
+    segs = list(segments) if segments is not None else default_segments(sources)
+    cuts = {s.id: merged(regions, s.id) for s in sources}
     out: list[Clip] = []
     # Exact cumulative timeline time, so rounding never accumulates across clips.
     t = Fraction(0)
-    for s in sources:
-        cuts = [(max(0, a), min(s.num_frames, b)) for a, b in merged(regions, s.id)]
-        pos = 0
+    for seg in segs:
+        src = by_id.get(seg.source_id)
+        if src is None:
+            continue
+        pos, end = max(0, seg.source_in), min(src.num_frames, seg.source_out)
         spans: list[tuple[int, int]] = []
-        for a, b in cuts:
+        for a, b in cuts[src.id]:
+            if b <= pos or a >= end:
+                continue
             if a > pos:
                 spans.append((pos, a))
             pos = max(pos, b)
-        if pos < s.num_frames:
-            spans.append((pos, s.num_frames))
+        if pos < end:
+            spans.append((pos, end))
         for a, b in spans:
             start = round(t * rate)
-            t += Fraction(b - a, s.sample_rate)
-            out.append(Clip(s.id, a, b, start, round(t * rate)))
+            t += Fraction(b - a, src.sample_rate)
+            out.append(Clip(src.id, a, b, start, round(t * rate)))
     return out
 
 

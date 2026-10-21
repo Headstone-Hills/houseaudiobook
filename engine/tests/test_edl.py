@@ -12,11 +12,15 @@ from conftest import FIXTURES
 
 from hillaudio.edl.model import (
     Region,
+    Segment,
     SourceInfo,
     clips,
+    default_segments,
     duration,
     kept_seconds,
     merged,
+    normalize,
+    place,
     to_source,
     to_timeline,
 )
@@ -120,3 +124,45 @@ def test_render_with_a_cut_blends_only_at_the_join() -> None:
     # A partial render equals the same stretch of the full one.
     part = render(cl, {0: inp}, 16000, 1, a - 1000, a + 1000)
     np.testing.assert_array_equal(part, out[a - 1000 : a + 1000])
+
+
+# -- segments (M6): moving a pickup into place ------------------------------------------------
+
+
+C = SourceInfo(3, 16000, 48_000)  # a 3 s pickup file
+
+
+def test_place_a_pickup_before_the_line_it_replaces_and_back() -> None:
+    base = default_segments([A, B, C])
+    moved = place(base, 3, 8000, 40_000, before=(1, 64_000))
+    assert moved == [
+        Segment(1, 0, 64_000),
+        Segment(3, 8000, 40_000),
+        Segment(1, 64_000, 160_000),
+        Segment(2, 0, 80_000),
+        Segment(3, 0, 8000),
+        Segment(3, 40_000, 48_000),
+    ]
+    assert place(moved, 3, 8000, 40_000) == base  # home again: merged back exactly
+    cl = clips([A, B, C], [region(1, 1, 64_000, 70_000)], 16000, moved)
+    assert [(c.source_id, c.source_in, c.source_out) for c in cl[:3]] == [
+        (1, 0, 64_000),
+        (3, 8000, 40_000),
+        (1, 70_000, 160_000),  # the replaced line, cut by its region
+    ]
+    assert duration(cl) == 160_000 + 80_000 + 48_000 - 6000
+
+
+def test_place_within_one_recording_and_edges() -> None:
+    base = default_segments([A])
+    later = place(base, 1, 100_000, 120_000, before=(1, 16_000))
+    assert later == [
+        Segment(1, 0, 16_000),
+        Segment(1, 100_000, 120_000),
+        Segment(1, 16_000, 100_000),
+        Segment(1, 120_000, 160_000),
+    ]
+    assert place(later, 1, 100_000, 120_000) == base
+    # "Before" the very start, or a sample that isn't on the timeline: still valid.
+    assert place(base, 1, 0, 1000, before=(1, 0)) == base
+    assert normalize([Segment(1, 0, 5), Segment(1, 5, 5), Segment(1, 5, 9)]) == [Segment(1, 0, 9)]

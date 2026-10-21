@@ -20,11 +20,22 @@ from dataclasses import asdict, dataclass, fields
 from typing import Any
 
 from hillaudio.analysis.cleanup import CleanupSettings, Cut
-from hillaudio.edl.model import Clip, Region, SourceInfo, clips, timeline_rate
+from hillaudio.edl.model import (
+    Clip,
+    Region,
+    Segment,
+    SourceInfo,
+    clips,
+    default_segments,
+    normalize,
+    timeline_rate,
+)
 from hillaudio.store.project import Origin, Project, now_iso
 
 EDIT_OPS = (
     "cleanup_apply",
+    "takes_detect",
+    "take_choice",
     "region_status",
     "region_edit",
     "cut",
@@ -113,61 +124,77 @@ class Timeline:
     sources: dict[int, SourceInfo]
     clips: list[Clip]
     regions: list[Region]
+    segments: list[Segment]
 
 
 def timeline(project: Project) -> Timeline:
     srcs = [SourceInfo(s.id, s.sample_rate, s.num_frames) for s in project.sources()]
     rate = timeline_rate(srcs)
-    regs = model_regions(regions(project))
-    return Timeline(rate, {s.id: s for s in srcs}, clips(srcs, regs, rate), regs)
+    with project.db() as conn:
+        regs = model_regions(_rows(conn))
+        segs = segments(conn, srcs)
+    return Timeline(rate, {s.id: s for s in srcs}, clips(srcs, regs, rate, segs), regs, segs)
 
 
 # -- the edit primitive ------------------------------------------------------------------
 
 
-def _write(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
+TABLES = ("edit_region", "take_group", "take")
+# A change is (table, row before, row after); None means "no such row". The
+# timeline order is one value: ("edl_segment", segments before, segments after).
+Change = tuple[str, Any, Any]
+
+
+def _write(conn: sqlite3.Connection, table: str, row: dict[str, Any]) -> None:
+    assert table in TABLES
+    cols = list(row)
     conn.execute(
-        f"INSERT OR REPLACE INTO edit_region ({', '.join(COLUMNS)})"
-        f" VALUES ({', '.join('?' * len(COLUMNS))})",
-        [row[c] for c in COLUMNS],
+        f"INSERT OR REPLACE INTO {table} ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
+        [row[c] for c in cols],
     )
 
 
-def _apply(conn: sqlite3.Connection, rid: int, row: dict[str, Any] | None) -> None:
-    if row is None:
-        conn.execute("DELETE FROM edit_region WHERE id = ?", (rid,))
+def _apply(conn: sqlite3.Connection, table: str, key: Any, value: Any) -> None:
+    if table == "edl_segment":
+        _write_segments(conn, value)
+    elif value is None:
+        assert table in TABLES
+        conn.execute(f"DELETE FROM {table} WHERE id = ?", (key,))
     else:
-        _write(conn, row)
+        _write(conn, table, value)
 
 
 def _commit(
     project: Project,
     conn: sqlite3.Connection,
     op_type: str,
-    changes: Sequence[tuple[dict[str, Any] | None, dict[str, Any] | None]],
+    changes: Sequence[Change],
     origin: Origin,
     summary: str,
     extra: dict[str, Any] | None = None,
 ) -> int | None:
-    """Write row changes and log them as one undoable entry. None: nothing changed."""
-    changes = [(b, a) for b, a in changes if b != a]
+    """Write changes and log them as one undoable entry. None: nothing changed."""
+    changes = [(tb, b, a) for tb, b, a in changes if b != a]
     if not changes:
         return None
-    for before, after in changes:
-        rid = (after or before or {})["id"]
-        _apply(conn, rid, after)
-    payload = {
-        "summary": summary,
-        "changes": [{"id": (a or b or {})["id"], "before": b, "after": a} for b, a in changes],
-        **(extra or {}),
-    }
+    entries = []
+    for table, before, after in changes:
+        key = None if table == "edl_segment" else (after or before)["id"]
+        _apply(conn, table, key, after)
+        entries.append({"table": table, "id": key, "before": before, "after": after})
+    payload = {"summary": summary, "changes": entries, **(extra or {})}
     return project.log(conn, op_type, payload, origin)
 
 
-def _next_id(conn: sqlite3.Connection) -> int:
+def _r(before: dict[str, Any] | None, after: dict[str, Any] | None) -> Change:
+    return ("edit_region", before, after)
+
+
+def _next_id(conn: sqlite3.Connection, table: str = "edit_region") -> int:
     # Ids are never reused, even after an undo deleted the newest row: a redo
     # writes the row back with its id, and later entries may refer to it.
-    used = conn.execute("SELECT COALESCE(MAX(id), 0) FROM edit_region").fetchone()[0]
+    assert table in TABLES
+    used = conn.execute(f"SELECT COALESCE(MAX(id), 0) FROM {table}").fetchone()[0]
     logged = 0
     for (payload,) in conn.execute(
         "SELECT payload_json FROM operation_log WHERE op_type IN ({})".format(
@@ -176,8 +203,55 @@ def _next_id(conn: sqlite3.Connection) -> int:
         EDIT_OPS,
     ):
         for c in json.loads(payload).get("changes", []):
-            logged = max(logged, int(c["id"]))
+            if c.get("table", "edit_region") == table:
+                logged = max(logged, int(c["id"]))
     return int(max(used, logged)) + 1
+
+
+# -- timeline order ------------------------------------------------------------------------
+
+
+def _read_segments(conn: sqlite3.Connection) -> list[list[int]]:
+    """Stored order as [source, in, out] lists; [] means the default order."""
+    return [
+        [r["source_file_id"], r["source_in"], r["source_out"]]
+        for r in conn.execute("SELECT * FROM edl_segment ORDER BY position")
+    ]
+
+
+def _write_segments(conn: sqlite3.Connection, segs: Sequence[Sequence[int]]) -> None:
+    conn.execute("DELETE FROM edl_segment")
+    conn.executemany(
+        "INSERT INTO edl_segment (position, source_file_id, source_in, source_out)"
+        " VALUES (?, ?, ?, ?)",
+        [(i, s[0], s[1], s[2]) for i, s in enumerate(segs)],
+    )
+
+
+def segments(conn: sqlite3.Connection, sources: Sequence[SourceInfo]) -> list[Segment]:
+    rows = _read_segments(conn)
+    if not rows:
+        return default_segments(sources)
+    known = {s.id for s in sources}
+    segs = [Segment(*r) for r in rows if r[0] in known]
+    # A recording imported after something was moved goes at the end.
+    placed = {s.source_id for s in segs}
+    segs += [Segment(s.id, 0, s.num_frames) for s in sources if s.id not in placed]
+    return segs
+
+
+def segments_change(
+    conn: sqlite3.Connection, sources: Sequence[SourceInfo], new: Sequence[Segment]
+) -> Change:
+    """The change that sets the timeline order (stored empty when it's the default)."""
+    before = _read_segments(conn)
+    norm = normalize(new)
+    after = (
+        []
+        if norm == default_segments(sources)
+        else [[s.source_id, s.source_in, s.source_out] for s in norm]
+    )
+    return ("edl_segment", before, after)
 
 
 def _new_row(
@@ -238,19 +312,17 @@ def apply_cleanup(
     with project.db() as conn:
         by_key = {r["stable_key"]: r for r in _rows(conn, "stable_key IS NOT NULL")}
         nid = _next_id(conn)
-        changes: list[tuple[dict[str, Any] | None, dict[str, Any] | None]] = []
+        changes: list[Change] = []
         for c in found:
             sr = rates[c.source_id]
             a, b = round(c.start * sr), round(c.end * sr)
             old = by_key.get(c.stable_key)
             if old is not None:
                 counts["kept"] += 1
-                if old["decided_by"] == "auto" and (old["start_sample"], old["end_sample"]) != (
-                    a,
-                    b,
-                ):
+                moved = (old["start_sample"], old["end_sample"]) != (a, b)
+                if old["decided_by"] == "auto" and moved:
                     changes.append(
-                        (old, old | {"start_sample": a, "end_sample": b, "run_id": run_id})
+                        _r(old, old | {"start_sample": a, "end_sample": b, "run_id": run_id})
                     )
                 continue
             status = "removed" if c.confidence >= s.auto_apply else "suggested"
@@ -271,7 +343,7 @@ def apply_cleanup(
                 detail={**c.detail, "sentence_ordinal": c.sentence_ordinal},
             )
             nid += 1
-            changes.append((None, row))
+            changes.append(_r(None, row))
         _commit(
             project,
             conn,
@@ -302,7 +374,7 @@ def set_status(project: Project, ids: Sequence[int], status: str) -> int | None:
         rows = [_get(conn, i) for i in ids]
         now = now_iso()
         changes = [
-            (r, r | {"status": status, "decided_by": "user", "updated_at": now})
+            _r(r, r | {"status": status, "decided_by": "user", "updated_at": now})
             for r in rows
             if r["status"] != status
         ]
@@ -338,7 +410,7 @@ def edit_bounds(
             "decided_by": "user",
             "updated_at": now_iso(),
         }
-        return _commit(project, conn, "region_edit", [(r, after)], "user", "Trim edit")
+        return _commit(project, conn, "region_edit", [_r(r, after)], "user", "Trim edit")
 
 
 def roll(project: Project, rid: int, delta: int) -> int | None:
@@ -354,7 +426,7 @@ def roll(project: Project, rid: int, delta: int) -> int | None:
             "decided_by": "user",
             "updated_at": now_iso(),
         }
-        return _commit(project, conn, "region_edit", [(r, after)], "user", "Rolling edit")
+        return _commit(project, conn, "region_edit", [_r(r, after)], "user", "Rolling edit")
 
 
 def cut(project: Project, source_id: int, start: int, end: int, note: str = "") -> int:
@@ -366,7 +438,7 @@ def cut(project: Project, source_id: int, start: int, end: int, note: str = "") 
     with project.db() as conn:
         rid = _next_id(conn)
         row = _new_row(rid, source_id, start, end, "cut", "removed", "user", note or "cut", "")
-        _commit(project, conn, "cut", [(None, row)], "user", "Cut")
+        _commit(project, conn, "cut", [_r(None, row)], "user", "Cut")
     return rid
 
 
@@ -400,7 +472,7 @@ def shorten_pause(project: Project, issue: dict[str, Any], keep_s: float | None 
                 "decided_by": "user",
                 "updated_at": now_iso(),
             }
-            _commit(project, conn, "shorten_pause", [(r, after)], "user", "Shorten pause")
+            _commit(project, conn, "shorten_pause", [_r(r, after)], "user", "Shorten pause")
             return int(r["id"])
         rid = _next_id(conn)
         row = _new_row(
@@ -417,7 +489,7 @@ def shorten_pause(project: Project, issue: dict[str, Any], keep_s: float | None 
             issue_id=issue["id"],
             detail={"keep_s": keep},
         )
-        _commit(project, conn, "shorten_pause", [(None, row)], "user", "Shorten pause")
+        _commit(project, conn, "shorten_pause", [_r(None, row)], "user", "Shorten pause")
         return rid
 
 
@@ -449,7 +521,7 @@ def undo(project: Project) -> dict[str, Any] | None:
         op = done[-1]
         payload = json.loads(op["payload_json"])
         for c in reversed(payload["changes"]):
-            _apply(conn, c["id"], c["before"])
+            _apply(conn, c.get("table", "edit_region"), c["id"], c["before"])
         conn.execute("UPDATE operation_log SET reverted_at = ? WHERE id = ?", (now_iso(), op["id"]))
         return {"seq": op["seq"], "summary": payload["summary"]}
 
@@ -462,7 +534,7 @@ def redo(project: Project) -> dict[str, Any] | None:
         op = stack[0]
         payload = json.loads(op["payload_json"])
         for c in payload["changes"]:
-            _apply(conn, c["id"], c["after"])
+            _apply(conn, c.get("table", "edit_region"), c["id"], c["after"])
         conn.execute("UPDATE operation_log SET reverted_at = NULL WHERE id = ?", (op["id"],))
         return {"seq": op["seq"], "summary": payload["summary"]}
 
