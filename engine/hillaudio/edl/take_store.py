@@ -33,7 +33,7 @@ class TakeError(ValueError):
 
 def _sources(project: Project) -> tuple[list[SourceInfo], dict[int, Any]]:
     srcs = project.sources()
-    return [SourceInfo(s.id, s.sample_rate, s.num_frames) for s in srcs], {s.id: s for s in srcs}
+    return [store.infos(s) for s in srcs], {s.id: s for s in srcs}
 
 
 def _group_rows(
@@ -66,6 +66,8 @@ def _choice_changes(
     chosen: dict[str, Any],
     origin: Origin,
     run_id: int | None,
+    update: dict[str, Any] | None = None,
+    compare_run: int | None = None,
 ) -> list[store.Change]:
     infos, by_id = _sources(project)
     order = {s.id: s.order_index for s in by_id.values()}
@@ -76,23 +78,28 @@ def _choice_changes(
         sr = by_id[t["source_file_id"]].sample_rate
         return round(t["start"] * sr), round(t["span_end"] * sr)
 
-    # Timeline order: the previous choice goes home, the new one (if it's in
-    # another recording than the line's first reading) moves into place.
+    def pickup(t: dict[str, Any]) -> bool:
+        return bool(by_id[t["source_file_id"]].role == "pickup")
+
+    # Timeline order: the previous choice goes home (a pickup has none: it leaves
+    # the timeline), and the new one moves into place if it's in another
+    # recording than the line's first reading in the narration. A line read only
+    # in pickups goes before the next line that was read (D-062).
     segs = store.segments(conn, infos)
     old = next((t for t in takes if t["status"] == "preferred"), None)
     if old is not None:
         a, b = samples(old)
-        segs = place(segs, old["source_file_id"], a, b)
-    anchor = _anchor(takes, order)
-    if chosen["source_file_id"] != anchor["source_file_id"]:
-        a, b = samples(chosen)
-        segs = place(
-            segs,
-            chosen["source_file_id"],
-            a,
-            b,
-            before=(anchor["source_file_id"], samples(anchor)[0]),
-        )
+        segs = place(segs, old["source_file_id"], a, b, homeless=pickup(old))
+    narration = [t for t in takes if not pickup(t)]
+    a, b = samples(chosen)
+    if narration:
+        anchor = _anchor(narration, order)
+        if chosen["source_file_id"] != anchor["source_file_id"]:
+            before = (anchor["source_file_id"], samples(anchor)[0])
+            segs = place(segs, chosen["source_file_id"], a, b, before=before)
+    else:
+        where = _line_position(conn, project, group, by_id, compare_run)
+        segs = place(segs, chosen["source_file_id"], a, b, before=where, at_end=where is None)
     changes.append(store.segments_change(conn, infos, segs))
 
     # Cuts: every take but the chosen one is off the timeline.
@@ -150,21 +157,64 @@ def _choice_changes(
             continue
         if new != t:
             changes.append(("take", t, new))
-    g = group | {
-        "previous_take_id": old["id"]
-        if old is not None and old["id"] != chosen["id"]
-        else group["previous_take_id"],
-        "state": "confirmed" if origin == "user" else group["state"],
-        "updated_at": now,
-    }
+    g = (
+        group
+        | {
+            "previous_take_id": old["id"]
+            if old is not None and old["id"] != chosen["id"]
+            else group["previous_take_id"],
+            "state": "confirmed" if origin == "user" else group["state"],
+            "updated_at": now,
+        }
+        | (update or {})
+    )
     changes.append(("take_group", group, g))
     return changes
+
+
+def _line_position(
+    conn: sqlite3.Connection,
+    project: Project,
+    group: dict[str, Any],
+    by_id: dict[int, Any],
+    compare_run: int | None,
+) -> tuple[int, int] | None:
+    """Where a line no narration recording has goes: just before the next line
+    read in the narration, as (recording, sample); None for the end.
+    `compare_run`: the alignment to go by (default: the latest finished)."""
+    from hillaudio import pipeline  # pipeline imports this module
+
+    run = compare_run if compare_run is not None else pipeline.latest_run(project)
+    if run is None or group["manuscript_unit_id"] is None:
+        return None
+    rows = conn.execute(
+        "SELECT a.source_file_id, a.start FROM alignment a"
+        " JOIN manuscript_unit u ON u.id = a.manuscript_unit_id"
+        " WHERE a.run_id = ? AND a.coverage > 0.6 AND u.kind = 'sentence'"
+        " AND u.ordinal > (SELECT ordinal FROM manuscript_unit WHERE id = ?)"
+        " ORDER BY u.ordinal, a.start",
+        (run, group["manuscript_unit_id"]),
+    ).fetchall()
+    for r in rows:
+        src = by_id.get(r["source_file_id"])
+        if src is None or src.role == "pickup":
+            continue
+        # Nothing read before it in that recording (its lead-in is room tone):
+        # before the whole recording, so the lead-in stays with what follows it.
+        earlier = conn.execute(
+            "SELECT 1 FROM alignment WHERE run_id = ? AND source_file_id = ? AND start < ?",
+            (run, src.id, r["start"]),
+        ).fetchone()
+        return (src.id, round(r["start"] * src.sample_rate) if earlier else 0)
+    return None
 
 
 # -- detection ---------------------------------------------------------------------------
 
 
-def apply_detection(project: Project, run_id: int, found: Sequence[TakeGroup]) -> dict[str, int]:
+def apply_detection(
+    project: Project, run_id: int, found: Sequence[TakeGroup], compare_run: int | None = None
+) -> dict[str, int]:
     """Store new groups and apply their suggestions, as one `auto` entry.
 
     A group seen before keeps its takes' statuses and the user's choice; takes
@@ -192,9 +242,27 @@ def apply_detection(project: Project, run_id: int, found: Sequence[TakeGroup]) -
                 entries += store._write_changes(conn, [("take", None, r) for r in rows])
                 takes = _take_rows(conn, old["id"])
                 chosen = next((t for t in takes if t["status"] == "preferred"), takes[0])
-                # Re-apply the current choice so the new takes are cut too.
+                update: dict[str, Any] = {}
+                pickups = {s.id for s in project.sources() if s.role == "pickup"}
+                if any(t.source_id in pickups for t in added):
+                    # A pickup for this line (D-062): the fresh ranking decides when
+                    # the choice was the app's; a choice the user made is put back
+                    # to them to confirm, with the pickup to listen to.
+                    best = next(t for t in takes if t["stable_key"] == grp.takes[0].stable_key)
+                    user_chose = chosen["decided_by"] == "user"
+                    if not user_chose:
+                        chosen = best
+                    update = {
+                        "state": "suggested",
+                        "confident": int(grp.confident and not user_chose),
+                        "reason": ", ".join(grp.reasons),
+                    }
+                # Re-apply the choice so the new takes are cut too.
                 entries += store._write_changes(
-                    conn, _choice_changes(conn, project, old, takes, chosen, "auto", run_id)
+                    conn,
+                    _choice_changes(
+                        conn, project, old, takes, chosen, "auto", run_id, update, compare_run
+                    ),
                 )
                 continue
             counts["groups"] += 1
@@ -220,7 +288,10 @@ def apply_detection(project: Project, run_id: int, found: Sequence[TakeGroup]) -
             entries += store._write_changes(conn, [("take", None, r) for r in rows])
             # The suggestion, applied: the best-ranked take.
             entries += store._write_changes(
-                conn, _choice_changes(conn, project, group, rows, rows[0], "auto", run_id)
+                conn,
+                _choice_changes(
+                    conn, project, group, rows, rows[0], "auto", run_id, None, compare_run
+                ),
             )
         n = counts["groups"]
         store._log_entries(

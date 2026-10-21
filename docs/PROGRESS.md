@@ -377,6 +377,17 @@ Deferred and risks:
 - Analysis runs on the whole book even in a chapter. It's quick to re-run (cached transcripts), but not per chapter.
 - The edit history is the book's: undo in one chapter can undo an edit made in another.
 
+## After M9 · edit check, pickups, timeline cuts (2026-10-21)
+Asked for by the user while testing (D-061, D-062, D-063).
+- [x] Fixed: a commentary cut could come out backwards and fail the whole analysis (an aside with no duration); regression test.
+- [x] Edit step: Re-run checks, and a live list of lines the edit removed or clipped, with Restore.
+- [x] Pickups: import re-recorded lines; they're transcribed, placed over the flubs (or into skipped lines), with a take chooser where needed; nothing else in a pickup file plays.
+- [x] Timeline: visible, clickable cuts, a cut panel with rolling edit, edge moves, listen and restore; a selection bar.
+
+Deferred and risks:
+- A pickup line that matches no manuscript line is listed but not placed: place it by hand on the timeline.
+- Pickups are placed by the latest comparison; adding narration after pickups means checking the reading again (as usual).
+
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.
 1. Typical project size (hours, number of takes)? *Assumed: SPEC §8's 10 h / ~2 GB as the upper bound.*

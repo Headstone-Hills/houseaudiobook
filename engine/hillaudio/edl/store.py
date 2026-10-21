@@ -30,7 +30,7 @@ from hillaudio.edl.model import (
     normalize,
     timeline_rate,
 )
-from hillaudio.store.project import Origin, Project, now_iso
+from hillaudio.store.project import Origin, Project, Source, now_iso
 
 EDIT_OPS = (
     "cleanup_apply",
@@ -129,7 +129,7 @@ class Timeline:
 
 
 def timeline(project: Project) -> Timeline:
-    srcs = [SourceInfo(s.id, s.sample_rate, s.num_frames) for s in project.sources()]
+    srcs = [infos(s) for s in project.sources()]
     rate = timeline_rate(srcs)
     with project.db() as conn:
         regs = model_regions(_rows(conn))
@@ -295,15 +295,21 @@ def _write_segments(conn: sqlite3.Connection, segs: Sequence[Any]) -> None:
     )
 
 
+def infos(s: Source) -> SourceInfo:
+    """What the timeline model needs of a recording."""
+    return SourceInfo(s.id, s.sample_rate, s.num_frames, s.role == "pickup")
+
+
 def segments(conn: sqlite3.Connection, sources: Sequence[SourceInfo]) -> list[Segment]:
     rows = _read_segments(conn)
     if not rows:
         return default_segments(sources)
     known = {s.id for s in sources}
     segs = [_seg(r) for r in rows if r["source_file_id"] in known]
-    # A recording imported after something was moved goes at the end.
+    # A recording imported after something was moved goes at the end (not a
+    # pickup: only its placed takes play, D-062).
     placed = {s.source_id for s in segs}
-    segs += [Segment(s.id, 0, s.num_frames) for s in sources if s.id not in placed]
+    segs += [Segment(s.id, 0, s.num_frames) for s in sources if s.id not in placed and not s.pickup]
     return segs
 
 

@@ -40,6 +40,8 @@ function setup() {
     "POST /api/project/timeline/tracks": VIEW,
     "PATCH /api/project/timeline/tracks/1": VIEW,
     "POST /api/project/edl/regions/status": { regions: [] },
+    "POST /api/project/edl/regions/5/roll": { regions: [] },
+    "PATCH /api/project/edl/regions/5": { regions: [] },
   });
   render(
     <TimelinePanel
@@ -99,8 +101,10 @@ describe("TimelinePanel", () => {
     await waitFor(() =>
       expect(sent(fetch)).toContainEqual(["timeline/trim", { ref: { source_id: 2, source_in: 0 }, edge: "start", t: 26 }]),
     );
+    // No cut near the playhead: a rolling edit says how to choose one, and sends nothing.
     press(app, ",");
-    await waitFor(() => expect(sent(fetch)).toContainEqual(["timeline/roll", { t: 26, delta: -0.05 }]));
+    expect(await screen.findByText(/Choose a cut first/)).toBeInTheDocument();
+    expect(sent(fetch).some(([u]) => String(u).includes("roll"))).toBe(false);
     press(app, "ArrowDown", { altKey: true }); // move the clip to the next track
     await waitFor(() =>
       expect(sent(fetch)).toContainEqual(["timeline/move", { ref: { source_id: 2, source_in: 0 }, t: 25, track_id: 2 }]),
@@ -185,4 +189,24 @@ describe("TimelinePanel", () => {
     act(() => added());
     await waitFor(() => expect(sent(fetch)).toContainEqual(["timeline/move", { ref: VIEW.clips[0]!.ref, t: 0, track_id: 2 }]));
   });
+});
+
+
+test("cuts: find one, then move it, trim it or put it back (D-063)", async () => {
+  const fetch = setup();
+  const app = await screen.findByRole("application", { name: /Timeline/ });
+  // C: the next cut after the playhead (0 s) is the stutter at 8.2 s.
+  press(app, "c");
+  const bar = await screen.findByRole("group", { name: "Cut" });
+  expect(bar).toHaveTextContent("✂ Cut at 0:08.2: 0.40 s taken out (“The”) · a stutter (cleanup)");
+  expect(screen.getByLabelText("Playhead")).toHaveTextContent("0:08.2");
+  // A rolling edit by button: the whole cut 50 ms later.
+  fireEvent.click(screen.getByRole("button", { name: "Later ▶" }));
+  await waitFor(() => expect(sent(fetch)).toContainEqual(["edl/regions/5/roll", { delta: 0.05 }]));
+  // One edge: start the cut 50 ms earlier (cut more).
+  fireEvent.click(screen.getByRole("button", { name: "Start the cut 50 ms earlier" }));
+  await waitFor(() => expect(sent(fetch, "PATCH")).toContainEqual(["edl/regions/5", { start: expect.closeTo(8.15, 5) as number }]));
+  fireEvent.click(screen.getByRole("button", { name: "Restore (put it back)" }));
+  await waitFor(() => expect(sent(fetch)).toContainEqual(["edl/regions/status", { ids: [5], status: "restored" }]));
+  expect(screen.queryByRole("group", { name: "Cut" })).toBeNull();
 });

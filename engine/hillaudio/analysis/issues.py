@@ -350,7 +350,9 @@ def silence_issues(
     out: list[IssueDraft] = []
     for a, b, length in pauses(mask, fps, cut):
         before = [r for r in mine if r.end <= a + slack]
-        after = [r for r in mine if r.start >= b - slack]
+        # The first line read after the pause begins: the same line whether or not
+        # what followed was cut since (a pickup took its place).
+        after = [r for r in mine if r.start >= a + slack]
         prev = by_ord[before[-1].sentence_ordinal] if before else None
         nxt = by_ord[after[0].sentence_ordinal] if after else None
         boundary = _boundary(prev[1] if prev else None, nxt[1] if nxt else None)

@@ -28,7 +28,7 @@ from hillaudio.analysis.issues import (
     unrecorded,
 )
 from hillaudio.edl import store as edl_store
-from hillaudio.edl.model import kept_seconds, merged
+from hillaudio.edl.model import merged
 from hillaudio.progress import CheckCancel, never_cancel
 from hillaudio.store.project import Project, now_iso
 
@@ -131,26 +131,38 @@ def detect(
         sid: [(a / src.sample_rate, b / src.sample_rate) for a, b in merged(tl.regions, sid)]
         for sid, src in tl.sources.items()
     }
+    # Heard means on the timeline: not cut, and laid out (a pickup's unused
+    # takes aren't, D-062), and not muted.
+    on: dict[int, list[tuple[int, int]]] = {}
+    for c in tl.clips:
+        if not c.muted:
+            on.setdefault(c.source_id, []).append((c.source_in, c.source_out))
+
+    def heard(r: ReadingInfo) -> float:
+        sr = tl.sources[r.source_id].sample_rate
+        lo, hi = round(r.start * sr), round(r.end * sr)
+        return sum(max(0, min(hi, b) - max(lo, a)) for a, b in on.get(r.source_id, [])) / sr
+
+    # A pause is named by the lines either side of it as recorded, heard or not:
+    # replacing a line with a pickup mustn't make the same pause a new issue.
+    every = readings
     readings = [
         r
         for r in readings
-        if r.source_id not in tl.sources
-        or r.end <= r.start
-        or kept_seconds(
-            tl.regions, r.source_id, tl.sources[r.source_id].sample_rate, r.start, r.end
-        )
-        >= 0.5 * (r.end - r.start)
+        if r.source_id not in tl.sources or r.end <= r.start or heard(r) >= 0.5 * (r.end - r.start)
     ]
     drafts: list[IssueDraft] = []
     if {"flub", "missing_line"} & set(kinds):
         drafts += [d for d in text_issues(sents, readings, s, not_recorded) if d.kind in kinds]
     if "silence" in kinds:
         for src in project.sources():
+            if src.role == "pickup":
+                continue  # off the timeline but for its placed takes (D-062)
             check_cancel()
             env = pipeline.envelope(project, src, check_cancel)
             # Keyed by the source's content hash: survives re-ordering and relabeling.
             drafts += silence_issues(
-                src.id, src.sha256, speech_mask(env), env.fps, sents, readings, s, cut[src.id]
+                src.id, src.sha256, speech_mask(env), env.fps, sents, every, s, cut[src.id]
             )
     return drafts
 

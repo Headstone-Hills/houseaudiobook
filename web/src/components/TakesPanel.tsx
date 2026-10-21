@@ -10,6 +10,8 @@ interface Props {
   sources: Source[];
   revision: number; // analysis finished, or an edit elsewhere (undo) changed things
   scope?: Scope; // a chapter: only its lines (D-059)
+  /** Only these groups (the lines pickups brought back to choose, D-062). */
+  groupIds?: number[];
   onEdited: () => void;
   onError: (msg: string) => void;
 }
@@ -17,7 +19,7 @@ interface Props {
 /** Take comparison (SPEC §6.5): one group per line read more than once. Keyboard
  * first: 1-9 choose, Space play, ←/→ switch take (A/B, in sync), L loop,
  * N / Shift+N next/previous line, C confirm, X reject, B back. */
-export function TakesPanel({ sources, revision, scope = null, onEdited, onError }: Props) {
+export function TakesPanel({ sources, revision, scope = null, groupIds, onEdited, onError }: Props) {
   const [data, setData] = useState<TakesResponse | null>(null);
   const [groupIdx, setGroupIdx] = useState(0);
   const [cursor, setCursor] = useState(0); // the take being auditioned, by index
@@ -39,14 +41,16 @@ export function TakesPanel({ sources, revision, scope = null, onEdited, onError 
 
   const groups = useMemo(
     () =>
-      (data?.groups ?? []).filter((g) =>
-        hasItem(scope, {
+      (data?.groups ?? []).filter(
+        (g) =>
+          (!groupIds || groupIds.includes(g.id)) &&
+          hasItem(scope, {
           unitId: g.manuscript_unit_id,
           sourceId: g.takes[0]?.source_file_id ?? null,
           start: g.takes[0]?.start ?? null,
         }),
       ),
-    [data, scope],
+    [data, scope, groupIds],
   );
   const group = groups[Math.min(groupIdx, groups.length - 1)];
   // Takes in the order they were recorded: "take 1" is the first reading.

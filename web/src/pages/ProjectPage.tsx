@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { ChapterPicker } from "../components/ChapterPicker";
 import { ComparisonPanel } from "../components/ComparisonPanel";
+import { EditCheckPanel } from "../components/EditCheckPanel";
 import { ExportPanel, FinalizePanel, GuidePanel } from "../components/FinishPanels";
 import { ImportPanel } from "../components/ImportPanel";
 import { IssuesPanel } from "../components/IssuesPanel";
 import { JobsPanel } from "../components/JobsPanel";
 import { ManuscriptPanel } from "../components/ManuscriptPanel";
 import { Overview } from "../components/Overview";
+import { PickupsPanel } from "../components/PickupsPanel";
 import { RemovedPanel } from "../components/RemovedPanel";
 import { SourceTable } from "../components/SourceTable";
 import { StepNav } from "../components/StepNav";
@@ -192,6 +194,15 @@ export function ProjectPage({ project, jobs, peakSettings, pageDefaults, onChang
         );
       case "issues":
         return (
+          <>
+          <PickupsPanel
+            sources={project.sources}
+            jobs={jobs}
+            revision={dataRevision + edlRevision}
+            scope={scope}
+            onEdited={edited}
+            onError={addError}
+          />
           <IssuesPanel
             checks={project.functions.filter((f) => ["cleanup", "takes", "flubs", "silences"].includes(f))}
             canRun={project.sources.length > 0}
@@ -201,6 +212,7 @@ export function ProjectPage({ project, jobs, peakSettings, pageDefaults, onChang
             onDecided={reviewed}
             onError={addError}
           />
+          </>
         );
       case "cleanup":
         return (
@@ -224,7 +236,16 @@ export function ProjectPage({ project, jobs, peakSettings, pageDefaults, onChang
         );
       case "timeline":
         return project.sources.length ? (
-          <TimelinePanel
+          <>
+            <EditCheckPanel
+              checks={project.functions.filter((f) => ["flubs", "silences"].includes(f))}
+              revision={dataRevision + edlRevision}
+              scope={scope}
+              onEdited={edited}
+              onTakes={() => go("takes")}
+              onError={addError}
+            />
+            <TimelinePanel
             sources={project.sources}
             peakSettings={peakSettings}
             revision={dataRevision + edlRevision + project.sources.length}
@@ -232,6 +253,7 @@ export function ProjectPage({ project, jobs, peakSettings, pageDefaults, onChang
             onEdited={edited}
             onError={addError}
           />
+          </>
         ) : (
           <p className="empty">Add recordings first: the timeline is built from them.</p>
         );
@@ -249,7 +271,7 @@ export function ProjectPage({ project, jobs, peakSettings, pageDefaults, onChang
   })();
 
   // Steps that are one panel show the step title only; their own heading would repeat it.
-  const solo = ["compare", "issues", "cleanup", "takes", "timeline", "manuscript"].includes(step);
+  const solo = ["compare", "cleanup", "takes", "manuscript"].includes(step);
 
   return (
     <div className="project">

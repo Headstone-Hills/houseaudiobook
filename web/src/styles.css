@@ -384,3 +384,35 @@ button.play:hover { background: var(--accent); color: var(--accent-fg); }
 .models-banner p { margin: 0.25rem 0; }
 .models-banner ul.models { list-style: none; padding-left: 0; margin: 0.25rem 0; }
 .models-banner progress { vertical-align: middle; width: 12rem; }
+
+/* Check the edit (D-061) */
+.edit-check { margin-bottom: 1rem; }
+.edit-check .run-row audio { margin-left: auto; height: 2rem; max-width: 18rem; }
+.lost-lines { list-style: none; padding: 0; display: grid; gap: 0.5rem; }
+.lost { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.6rem 0.8rem; background: var(--surface-2); }
+.lost-removed { box-shadow: inset 4px 0 0 var(--err-fg); }
+.lost .actions { margin: 0.4rem 0 0; }
+
+/* Pickups (D-062) */
+.pickups { margin-bottom: 1rem; }
+.pickups .run-row audio { margin-left: auto; height: 2rem; max-width: 18rem; }
+.pickup-file h3 { margin: 0.75rem 0 0.25rem; font-size: 0.95rem; }
+.pickup-lines { list-style: none; padding: 0; margin: 0; }
+.pickup-lines li { padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+.chip-pickup-placed { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+.chip-pickup-choose { background: var(--warn-bg); color: var(--warn-fg); border-color: transparent; }
+.chip-pickup-not_used { color: var(--muted); }
+.pickup-unmatched { color: var(--muted); }
+.pickup-choose { margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 0.5rem; }
+.tag-pickup { font-size: 0.75rem; font-weight: 600; margin-left: 0.4rem; padding: 0 0.4rem; border-radius: 999px; background: var(--accent-weak); color: var(--accent); }
+
+/* Timeline: how to cut, the selection, the chosen cut (D-063) */
+.timeline-help { margin: 0.25rem 0 0.5rem; color: var(--muted); font-size: 0.9rem; }
+.edit-bar { display: flex; flex-direction: column; gap: 0.4rem; margin: 0.5rem 0; padding: 0.6rem 0.8rem; border-radius: 8px; background: var(--accent-weak); border: 1px solid var(--border); }
+.edit-bar[aria-label="Selection"] { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.cut-bar { border-left: 4px solid #dc2626; }
+.cut-what { display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; }
+.cut-what .link { margin-left: auto; }
+.cut-row { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+.cut-label { color: var(--muted); font-size: 0.85rem; margin: 0 0.25rem 0 0.5rem; }
+.cut-label:first-child { margin-left: 0; }

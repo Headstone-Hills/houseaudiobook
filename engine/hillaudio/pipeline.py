@@ -10,7 +10,7 @@ envelopes in cache/envelope/.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any
 
 import numpy as np
@@ -300,7 +300,10 @@ def cleanup(
                 )
             ]
         mine = [r for r in readings if r.source_id == src.id]
-        found += cl.cuts(src.id, src.sha256, sents, mine, gaps, words, mask, env.fps, s)
+        # A pickup plays only its placed takes: asides and false starts in it are
+        # off the timeline anyway; only stutters inside a take matter (D-062).
+        mine_s = replace(s, false_starts=False, commentary=False) if src.role == "pickup" else s
+        found += cl.cuts(src.id, src.sha256, sents, mine, gaps, words, mask, env.fps, mine_s)
     return edl_store.apply_cleanup(project, run_id, found, s)
 
 
@@ -338,8 +341,9 @@ def takes(
         cut=cut,
         levels=levels,
         settings=issue_store.settings(project),
+        pickups=frozenset(s.id for s in sources if s.role == "pickup"),
     )
-    return take_store.apply_detection(project, run_id, found)
+    return take_store.apply_detection(project, run_id, found, compare_run)
 
 
 # -- results -------------------------------------------------------------------------------------
