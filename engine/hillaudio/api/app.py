@@ -18,7 +18,7 @@ from typing import Any, Literal
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from hillaudio import __version__, functions, settings
+from hillaudio import __version__, functions, settings, tools
 from hillaudio.analysis.peaks import BASE, FACTOR, LEVELS, Peaks
 from hillaudio.api import analysis, edl, finalize, issues, manuscript, models, takes, timeline
 from hillaudio.api.guard import DEFAULT_HOSTS, LocalOnlyGuard, allowed_origins
@@ -176,7 +176,8 @@ def create_app(
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
-        return {"status": "ok", "version": __version__}
+        # Which ffmpeg is in use: the packaged app must use its own copy (D-056).
+        return {"status": "ok", "version": __version__, "ffmpeg": tools.ffmpeg()}
 
     @app.get("/api/functions")
     def list_functions() -> list[dict[str, Any]]:

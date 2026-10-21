@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   api,
   excerptUrl,
@@ -68,8 +68,10 @@ export function RemovedPanel({ revision, onEdited, onError }: Props) {
       })
       .catch(fail);
 
-  // Undo/redo from anywhere on the page, except while typing.
-  useEffect(() => {
+  // Undo/redo from anywhere on the page, except while typing. A layout effect, so
+  // the listener sees the new state in the same commit that shows it: a passive
+  // effect left a gap where a quick Shift+Ctrl+Z after an undo was ignored.
+  useLayoutEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName ?? "";
       if (["INPUT", "TEXTAREA", "SELECT"].includes(tag) || !(e.metaKey || e.ctrlKey)) return;

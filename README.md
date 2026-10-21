@@ -17,11 +17,18 @@ exports audio plus a narrator corrections guide. Everything runs locally.
 ```
 make setup      # venv, deps, npm install, check ffmpeg
 make dev        # engine (127.0.0.1:8765) + web (http://127.0.0.1:5173)
+make serve      # production web mode: built UI + API on one port
 make test       # engine tests + web tests
 make check      # ruff, mypy, tsc --noEmit, eslint, tests
 make fixtures   # regenerate synthetic test audio + ground truth
 make e2e        # browser end-to-end tests (Playwright; set CHROMIUM_PATH to reuse a local Chromium)
 ```
+
+## Mac app
+`scripts/build_macos.sh` (on a Mac) builds `HillAudiobook.app` and a `.dmg`:
+the same engine and UI in a Tauri window, with ffmpeg bundled. Speech models
+download on first run, when you ask. Signing, notarization and the details are
+in [`docs/PACKAGING.md`](docs/PACKAGING.md).
 
 ## Test fixtures
 `engine/fixtures/` holds about 66 s of synthetic narration (2.1 MB) with known,

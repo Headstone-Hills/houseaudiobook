@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened runtime entitlements (D-057). No App Sandbox: the app reads recordings
+  and manuscripts where they are (reference imports) and writes projects where
+  the user chooses, which the sandbox would forbid without a file-picker grant
+  for every path.
+  - allow-unsigned-executable-memory / disable-library-validation: the bundled
+    Python engine (PyInstaller) loads its extension modules and libraries from
+    its own folder at run time.
+  - network.client: the first-run model download (huggingface.co) only. Audio
+    and text never leave the machine.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <key>com.apple.security.network.client</key>
+  <true/>
+</dict>
+</plist>

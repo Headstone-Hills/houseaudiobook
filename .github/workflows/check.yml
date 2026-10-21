@@ -39,3 +39,34 @@ jobs:
       - run: make setup
       - run: cd web && npx playwright install --with-deps chromium
       - run: make e2e
+
+  # The macOS app (M9): build the engine + Tauri shell, ad-hoc signed, then
+  # smoke-test it (the app starts its engine; a real first run inside it).
+  macos-app:
+    runs-on: macos-14  # Apple Silicon (arm64)
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: shell
+      - name: Launcher tests
+        run: cd shell && cargo test -p hillaudio-launcher
+      - name: Build and smoke-test HillAudiobook.app
+        run: scripts/build_macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HillAudiobook-macos-arm64
+          path: |
+            shell/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 14

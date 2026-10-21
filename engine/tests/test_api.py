@@ -56,7 +56,8 @@ def import_paths(client: TestClient, paths: list[Path], mode: str = "copy") -> d
 
 
 def test_health(client: TestClient) -> None:
-    assert client.get("/api/health").json() == {"status": "ok", "version": __version__}
+    h = client.get("/api/health").json()
+    assert h["status"] == "ok" and h["version"] == __version__ and "ffmpeg" in h["ffmpeg"]
 
 
 def test_functions_endpoint(client: TestClient) -> None:

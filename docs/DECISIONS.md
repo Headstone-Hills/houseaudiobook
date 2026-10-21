@@ -673,3 +673,94 @@ global alignment:
   A4 PDF (reportlab) with a header (project, narrator, date, reference) and
   counts by type.
 
+
+## D-054 · The Mac app is a thin Tauri shell around `hillaudio serve` (M9)
+- **One server for UI and API.** The engine serves the built web UI and the API
+  from one loopback port (`hillaudio serve`). The Tauri window just opens that
+  URL. So the app *is* web mode, and "web mode still works" is true by
+  construction. `make serve` runs the same thing from a checkout.
+- **The port.** The engine binds port 0 on 127.0.0.1 before starting uvicorn on
+  that socket. This leaves no race between picking a free port and listening.
+  It then prints `HILLAUDIO_READY port=N url=…`. Only loopback hosts are
+  accepted (`--host 0.0.0.0` is refused). The engine's own origin is added to
+  the Host/Origin guard; nothing else is.
+- **Lifetime.** `--exit-with-stdin`: the shell holds the engine's stdin, and the
+  engine exits when it closes. Any shell exit, including a crash or SIGKILL,
+  therefore ends the engine. On a normal quit the shell closes stdin, waits 5 s,
+  then kills it.
+- **The launcher is its own crate.** Process handling (`shell/launcher`) has no
+  Tauri dependency, so it is unit-tested with `cargo test` anywhere: READY
+  parsing, finding the engine in the bundle, crash and timeout errors, stop on
+  stdin close. `main.rs` only wires windows to it.
+- **`--smoke-test`** makes the built app start its bundled engine, check
+  `/api/health` and the UI page, and exit 0/1. CI runs it on the `.app`.
+- **PyInstaller onedir, not onefile.** onefile unpacks ~0.5 GB to a temp folder on
+  every launch, which is slow and leaves litter. onedir starts in about 1 s
+  (0.9 s measured on Linux). The engine sits in `Contents/Resources/engine/` as a
+  plain resource, not a Tauri "sidecar": a sidecar is a single binary, and this
+  engine is a folder.
+- **Fallback not needed.** SPEC's fallback was PyInstaller + pywebview. Tauri
+  built and ran here (on Linux, against webkit2gtk), and the macOS CI job is the
+  proof on the target.
+
+## D-055 · Speech models: pinned, verified, explicit downloads (M9)
+- **A fixed catalog.** `asr/models.py` lists tiny.en, base.en, small.en and
+  medium.en from Systran's faster-whisper repos. Each entry pins a commit and
+  records every file's size and hash, read from the Hugging Face API
+  (`/api/models/<repo>?blobs=true`) on 2026-10-21:
+  - SHA-256 for the LFS weights;
+  - the git blob SHA-1 for small files (the only hash the API gives for those).
+
+  A file that doesn't match is never used. Models whose license we haven't
+  confirmed (large-v3-turbo) are not offered.
+- **Our own downloader instead of `huggingface_hub`.** It is a few dozen lines of
+  urllib and gives us what the UI needs:
+  - byte-level progress;
+  - cancel between chunks;
+  - resume with an HTTP Range from `.part` files;
+  - verification before install;
+  - an `.installed.json` marker, so a half-download is never "installed".
+
+  A truncated transfer keeps its `.part` and says it will resume. A checksum
+  mismatch deletes it.
+- **Nothing downloads implicitly.** Transcription loads only an installed model.
+  Otherwise it fails with "isn't downloaded yet (about N MB)". The UI shows a
+  first-run banner with the size and the source and a Download button, and
+  analysis stays disabled until the model is there. Copies the earlier implicit
+  download left in the HF cache layout, at the same pinned revision, are
+  adopted rather than downloaded again.
+- **Local-only still holds.** The download is the only network call. It is
+  started by the user, sends nothing of theirs, and goes to a single host:
+  huggingface.co, or `HILLAUDIO_MODEL_ENDPOINT` for tests.
+
+## D-056 · Bundled tools and the app home (M9)
+- **ffmpeg/ffprobe lookup.** The engine finds them in this order:
+  1. `$HILLAUDIO_FFMPEG_DIR`;
+  2. the copies bundled in the frozen engine (`_MEIPASS/bin`);
+  3. PATH.
+
+  The packaged app therefore never depends on what the user installed. Every
+  call site goes through `hillaudio.tools`, and `/api/health` reports the path in
+  use so the smoke test can require the bundled one.
+- **Which ffmpeg builds.** The Mac build bundles static ffmpeg builds that
+  include libmp3lame, required by MP3 export (D-052). The license choice is open
+  (LICENSES.md).
+- **App home.** `~/Library/Application Support/HillAudiobook` on macOS, the
+  platform's convention. An existing `~/.hillaudiobook` keeps being used so
+  nothing is lost. `$HILLAUDIO_HOME` overrides both. Projects themselves live
+  wherever the user puts them.
+
+## D-057 · Hardened runtime, no sandbox, macOS 12+, Apple Silicon in CI (M9)
+- **Hardened runtime on** (needed to notarize), with three entitlements:
+  - unsigned executable memory, for Python and the ML runtimes;
+  - disabled library validation, for the bundled extension modules;
+  - network client, for loopback and the model download.
+- **No App Sandbox.** Reference-mode projects point at recordings anywhere on
+  disk, and a sandbox would need a security-scoped bookmark per file. Developer
+  ID distribution doesn't require a sandbox; the Mac App Store would.
+- **Signed-ready.** Signing and notarization run only when the APPLE_* variables
+  are set (PACKAGING.md). Without them the build is ad-hoc signed, so CI and
+  contributors can build without an Apple account.
+- **Targets.** Minimum macOS 12 is the oldest still common, and Tauri 2 supports
+  it. The CI runner is Apple Silicon. Intel is the same script on an Intel
+  machine; it is untested (open question 5).

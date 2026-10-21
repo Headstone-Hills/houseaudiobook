@@ -4,7 +4,7 @@ Every dependency and model is checked before bundling (SPEC §12). Versions are
 what is installed or evaluated as of the date shown. "Dev only" means it is never
 shipped in the app.
 
-## In use (updated M8, 2026-10-21)
+## In use (updated M9, 2026-10-21)
 
 | Package | Version | License | Shipped? |
 |---|---|---|---|
@@ -16,10 +16,10 @@ shipped in the app.
 | faster-whisper | 1.2.1 | MIT | yes (`asr` extra) |
 | ctranslate2 | 4.8.3 | MIT | yes (faster-whisper runtime) |
 | onnxruntime | 1.31.0 | MIT | yes (faster-whisper dependency) |
-| av (PyAV) | 18.1.0 | BSD-3-Clause; **bundles FFmpeg libraries (LGPL)** | yes (faster-whisper decodes audio with it); check its FFmpeg build's license before M9 bundling |
+| av (PyAV) | 18.1.0 | BSD-3-Clause; **bundles FFmpeg libraries (LGPL)** | yes (faster-whisper decodes audio with it; shipped as PyAV's own wheel libraries, unmodified) |
 | tokenizers | 0.23.3 | Apache-2.0 | yes (faster-whisper dependency) |
-| huggingface-hub | 2.2.0 | Apache-2.0 | yes (model download) |
-| Whisper weights: Systran/faster-whisper-small.en (default), tiny.en | n/a | MIT (model cards, checked 2026-10-20) | downloaded on first use, never bundled or committed |
+| huggingface-hub | 2.2.0 | Apache-2.0 | installed as a faster-whisper dependency; model downloads use our own verified downloader since M9 (D-055) |
+| Whisper weights: Systran/faster-whisper-{tiny,base,small,medium}.en at pinned revisions | n/a | MIT (model cards, checked 2026-10-20/21) | downloaded only when the user asks (M9), never bundled or committed |
 | reportlab | 5.0.1 | BSD | yes (narrator guide PDF, M8; also generates PDF fixtures) |
 | numpy | 2.4.x | BSD-3-Clause (plus 0BSD, MIT, Zlib, CC0 parts) | yes |
 | soundfile | 0.14.0 | BSD-3-Clause; bundles libsndfile (LGPL-2.1) | yes |
@@ -32,7 +32,10 @@ shipped in the app.
 | @types/node | current | MIT | dev only |
 | pytest, ruff, mypy, httpx2 | current | MIT / MIT / MIT / BSD-3 | dev only |
 | espeak-ng | 1.51 | GPL-3.0-or-later | dev only (fixture generation); never bundled |
-| ffmpeg | 6.1 (system) | LGPL-2.1+ or GPL, depending on build | not bundled yet; decide in M9. M8 encodes MP3 with its libmp3lame (LAME is LGPL-2.0+): the bundled ffmpeg must include it |
+| ffmpeg, ffprobe | 6.1 (system, dev) / static build (Mac app) | LGPL-2.1+ or GPL-2.0+, depending on build | **bundled in the Mac app** as separate executables (D-056). The build script fetches static builds from ffmpeg.martin-riedl.de; those are configured with GPL components (assumed, as is usual for full static builds; the site was unreachable from this environment), so the GPL's source-offer duties would apply. An LGPL build with only libmp3lame (LGPL-2.0+) avoids them: **decide before distributing** (PROGRESS, open question 11) |
+| pyinstaller | 6.22.3 | GPL-2.0-or-later with the bootloader exception | build tool; its bootloader is shipped, which the exception permits for non-GPL apps |
+| tauri, tauri-build | 2.12.5 (wry 0.57, tao 0.37) | MIT or Apache-2.0 | yes (the Mac app's window) |
+| Rust crates under tauri | various | almost all MIT/Apache-2.0 | yes; a full crate-by-crate list (`cargo about` or similar) is left for release preparation |
 
 ## Candidates evaluated (not yet installed in the project)
 
@@ -49,9 +52,7 @@ shipped in the app.
 | pyloudnorm | 0.2.0 | MIT | not adopted in M8: needs scipy; ACX measures RMS, not LUFS (D-050) |
 | noisereduce | 3.0.3 | MIT | not adopted in M8: needs scipy and matplotlib; own spectral gating instead (D-050) |
 | **pedalboard** | 0.9.26 | **GPL-3.0** | **not adopted** (D-050): the finalize DSP is our own numpy code, so the GPL question doesn't arise |
-| tauri | 2.12.4 | MIT or Apache-2.0 | M9 |
-| pyinstaller | 6.22.3 | GPL-2.0-or-later with bootloader exception | M9; the exception permits bundling non-GPL apps |
-| pywebview | 6.2.1 | BSD-3-Clause | M9 fallback |
+| pywebview | 6.2.1 | BSD-3-Clause | not adopted: the M9 fallback wasn't needed (D-054) |
 
 Sources: each package's PyPI or npm metadata, read on 2026-10-20 (e.g.
 `https://pypi.org/pypi/<name>/json`), plus installed package metadata.

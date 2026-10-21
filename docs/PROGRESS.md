@@ -322,37 +322,38 @@ Risks:
 - The ACX numbers are unverified at the source (open question 10).
 - Long single-file exports are limited by temp disk (pass 1 writes float32: about 600 MB per hour at 44.1 kHz mono).
 
-## M9 · macOS packaging: in progress
+## M9 · macOS packaging: done (2026-10-21)
 
-Plan:
-1. **The engine as one standalone server** (`hillaudio serve`).
-   - Serves the built web UI and the API from one localhost port: a free port chosen safely, and a `READY port=…` line for the shell.
-   - Exits when the shell does (stdin closes).
-   - The app home follows the platform: `~/Library/Application Support/HillAudiobook` on macOS; the existing `~/.hillaudiobook` keeps working.
-   - ffmpeg/ffprobe are found next to the engine (bundled), via `$HILLAUDIO_FFMPEG_DIR`, or on PATH.
-2. **First-run model download** (D-055).
-   - An explicit, visible download of the chosen speech model: size shown first, progress, cancel, and resume.
-   - Each file is verified against the Hugging Face revision's checksums (SHA-256 for weights, git blob SHA-1 for small files), at a **pinned revision**.
-   - Transcription uses only installed models; nothing downloads behind the user's back.
-   - UI: a first-run banner and a Models section.
-3. **The shell** (`shell/`, Tauri 2).
-   - A small Rust `launcher` crate, unit-tested here: find the bundled engine, start it, wait for READY with a timeout, stop it on exit.
-   - The app window opens the engine's own origin. `--smoke-test` starts the engine, checks `/api/health`, and exits, for CI.
-   - Hardened runtime with entitlements, no App Sandbox (reference-mode imports need arbitrary paths).
-   - Signing and notarization driven by environment variables (`APPLE_SIGNING_IDENTITY`, `APPLE_ID`/`APPLE_TEAM_ID`/`APPLE_PASSWORD` or an API key): **signed-ready**, unsigned when they're absent.
-4. **Build:** `scripts/build_macos.sh`.
-   - Web build, then the PyInstaller engine (onedir, for a fast start) with bundled ffmpeg/ffprobe, then `tauri build`, then deep signing and notarization when credentials are set.
-   - A **CI job on a macOS runner** builds the `.app` and runs its smoke test.
-5. **Web mode still works.** `make dev` is unchanged, and `make serve` runs the production single-port server. Tested (API + UI + SPA routes) and smoke-tested in CI.
-6. **Tests.**
-   - Serve/static/READY/stdin exit.
-   - Model manager against a fake Hugging Face server: progress, resume, checksum mismatch, cancel, no partial install.
-   - The launcher (cargo test); UI first-run; e2e.
-   - The PyInstaller build is verified on Linux by running the frozen engine through a real transcription.
-- **Risks.**
-  - The `.app` can only be built and run on macOS: CI is the proof, not this container.
-  - Bundled ffmpeg licensing (GPL builds): recorded in LICENSES, needs a decision before distribution.
-  - Intel Macs: the CI build is Apple Silicon (open question 5).
+Acceptance criteria (SPEC §9):
+- [x] **Signed-ready `.app` wrapper** (D-054, D-057; how-to in `docs/PACKAGING.md`).
+  - The shell is Tauri 2 (`shell/src-tauri`). It shows a splash, starts the bundled PyInstaller engine (`Contents/Resources/engine/`, onedir, about a 1 s start), and opens its loopback URL. It stops the engine on quit, and the engine also exits if the shell dies (stdin closes).
+  - Hardened runtime with entitlements and no sandbox. Signing and notarization run when the `APPLE_*` variables are set; otherwise the app is ad-hoc signed. Minimum macOS 12.
+  - `scripts/build_macos.sh` builds the `.app` and `.dmg` with bundled static ffmpeg/ffprobe. It then runs the app's `--smoke-test` and a real first run on the engine inside the app.
+  - The CI job `macos-app` (macos-14, Apple Silicon) runs this and uploads the `.dmg`.
+  - Proven here on Linux:
+    - the frozen engine built with the same spec passes `scripts/smoke_engine.py --bundled-ffmpeg`: a real tiny.en download from Hugging Face, import, transcription and comparison, chapter MP3 export passing ACX, and the guide PDF, all with the bundled ffmpeg;
+    - the Tauri shell builds (webkit2gtk) and its `--smoke-test` starts the frozen engine and gets health and the UI page.
+- [x] **First-run model download** (D-055).
+  - A pinned catalog (tiny/base/small/medium.en at fixed revisions, with every file's size and hash).
+  - An explicit download job with progress, cancel and HTTP Range resume, checksum verification and an install marker. Nothing downloads implicitly, and transcription refuses a missing model with its size.
+  - UI: a first-run banner, and a Speech models list with download/remove. Analysis is disabled until the chosen model is installed.
+  - Tested against a fake Hugging Face server (resume, truncated transfer, bad checksum, cancel, API), and once against the real one (opt-in test).
+- [x] **Web mode still works.** `make dev` is unchanged. `hillaudio serve` / `make serve` serves the built UI and the API on one port and prints a READY line. It refuses non-loopback hosts and exits with stdin; tested end to end in a subprocess.
+- [x] Immutability, local-only: unchanged. The model download is the only network call; the user starts it, and it sends nothing of theirs.
+
+`make check`: 305 engine tests (2 opt-in skipped), 57 web tests. `cargo test -p hillaudio-launcher`: 4 tests. `make e2e`: 9 tests.
+
+Bugs found and fixed, with regression tests:
+- A truncated model download failed its checksum and was deleted. It is now kept as `.part` and resumes.
+- `/api/asr` sizes disagreed with the catalog. They now come from the catalog.
+- **Undo/redo shortcut race.** Shift+Ctrl+Z right after an undo was sometimes ignored: the window key listener was re-registered in a passive effect, after the "Redo" button had already rendered. It now uses a layout effect. Covered by the RemovedPanel undo/redo test, which caught it under load.
+
+Deferred and risks:
+- **The `.app` runs only in CI.** It can't be launched in this container. The CI smoke tests are the proof, and a manual check on a real Mac (opening the window, Gatekeeper with a real Developer ID) is still worth doing.
+- **Bundled ffmpeg license** (open question 11).
+- **Intel Macs** are unbuilt (open question 5).
+- **Engine size.** The engine is about 0.6 GB (ctranslate2, onnxruntime, PyAV). The `.dmg` compresses it; trimming unused libraries is possible later.
+- **Download URL.** The ffmpeg URL in `build_macos.sh` couldn't be checked from here (the proxy blocks that host). CI confirms it, or `FFMPEG_DIR` can point at your own build.
 
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.
@@ -365,4 +366,5 @@ Defaults are assumed until answered; none blocks M1.
 7. ~~pedalboard is GPL-3.0.~~ *Resolved in M8 without needing a decision: the DSP is our own numpy code (D-050).*
 9. **MP3 recordings and ACX.** MP3 export from MP3 recordings is refused (lossy to lossy, CLAUDE.md), but ACX wants MP3. *Assumed: narrators deliver WAV; for MP3 originals, export WAV and encode elsewhere, or allow one re-encode as an explicit opt-in?*
 10. **Confirm the ACX numbers on acx.com.** The page was unreachable from this environment; the preset uses its summary in search results (D-051).
+11. **Bundled ffmpeg license.** The Mac app ships ffmpeg/ffprobe as separate programs. Full static builds are GPL: allowed, but with the GPL's source-offer duties. An LGPL build with only libmp3lame avoids them. *Assumed for now: GPL static builds, fine for testing; decide before distributing (LICENSES.md).*
 8. **Commercial use?** If the app will ever be sold or used commercially, CrisperWhisper's weights are off the table, which D-007 already assumes.
