@@ -159,6 +159,36 @@ Risks:
 - Stable keys depend on sentence text. Editing a sentence's wording in the manuscript makes its issues new (old decisions stay on the old keys, unmatched).
 - Fixtures are synthetic (one voice, 13 sentences). Re-check on a real narration before M8.
 
+## M5 · Cleanup + EDL: in progress
+
+Plan:
+1. **`analysis/cleanup.py`** (pure): cut candidates with a reason, confidence and stable key.
+   - **Stutters:** extra words tagged `repeat` by the alignment. Cut from the repeat's onset to the next word's onset.
+   - **False starts:** a partial reading followed soon after by a reading of the same sentence. Cut from the partial's onset to the restart's onset.
+   - **Commentary:** unaligned speech. Cut from its onset to the next reading's onset. Keyword hints ("sorry", "let me", "again", "hold on"...) raise confidence; long hint-free passages stay *suggested*, since they may be text missing from the manuscript.
+   - Without a manuscript: immediate word repeats from the transcript alone.
+   - Edges snap to speech onsets (the energy mask). Confidence ≥ threshold (0.7, configurable) is applied; lower is *suggested*.
+2. **EDL model** (`edl/`, pure). The narration track is the sources in order, minus *removed regions*: sample-accurate integer ranges per source, each with a kind, reason, origin, status and stable key. Clips and timeline positions are derived from them, so every edit ripples by construction.
+   - Rolling/ripple edits on a clip edge move a region's edges. Dragging an edge outward re-exposes removed audio.
+3. **Store and undo.** Schema v5 `edit_region`. Every edit is one operation-log entry with before/after rows, origin `auto` or `user`.
+   - Undo/redo is unlimited and persisted (`reverted_at`); a new edit after undo clears the redo stack.
+   - Re-running cleanup keeps user decisions (stable keys).
+4. **Pipeline and checks.** A `cleanup` stage (before the checks).
+   - Checks see the current timeline: readings that were cut are ignored, and pauses are measured with cut audio removed.
+   - "Shorten pause" on a long-pause issue cuts its middle down to N s. The next check auto-resolves it.
+5. **Render.** A sample-exact render of the timeline (or a range), decoded from the original sources, used for previews and the round-trip test.
+6. **API and UI.**
+   - Removed Material panel: kind, text, time, confidence, status; restore, re-apply, play the cut, play the join; keyboard shortcuts.
+   - Undo/redo (Ctrl/⌘+Z, Shift+Ctrl/⌘+Z) and a history list.
+   - Shorten from the Issues panel.
+7. **Tests.**
+   - Precision/recall for stutter, false-start and commentary cuts on the fixtures (perfect and noisy fake ASR, plus real small.en).
+   - Round trip: auto-edit, then undo all, renders sample-identical to the sources.
+   - Rolling-edit restore; undo/redo across reopening; immutability; API, UI and e2e.
+- **Risks.**
+  - The region model fits one narration track. M7 multitrack moves/gain/fades will need explicit clips (planned migration).
+  - Cutting at speech onsets without crossfades may click on real recordings; render adds short fades at joins only.
+
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.
 1. Typical project size (hours, number of takes)? *Assumed: SPEC §8's 10 h / ~2 GB as the upper bound.*
