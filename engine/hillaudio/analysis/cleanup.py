@@ -102,8 +102,12 @@ def _key(*parts: str) -> str:
     return hashlib.sha256("\x1f".join(parts).encode()).hexdigest()[:24]
 
 
-def _onset(mask: Mask | None, fps: float, t: float, lower: float | None = None) -> float:
-    return snap_start(mask, fps, t, lower=lower) if mask is not None and len(mask) else t
+def _onset(
+    mask: Mask | None, fps: float, t: float, lower: float | None = None, upper: float | None = None
+) -> float:
+    if mask is None or not len(mask):
+        return t
+    return snap_start(mask, fps, t, lower=lower, upper=upper)
 
 
 def _next_word(words: Sequence[TWord], t: float) -> TWord | None:
@@ -227,6 +231,12 @@ def cuts(
                 end = _onset(mask, fps, nxt.start, lower=g.start)
             else:
                 end = g.end  # nothing follows: leave the file's tail as it was
+            # Snapping the start to the speech onset must not carry it past the
+            # line that follows. The recognizer can give an aside no duration at
+            # all (every word at one timestamp): then there's nothing to cut.
+            start = _onset(mask, fps, g.start, upper=end)
+            if end <= start:
+                continue
             hints = hint_score(g.text)
             n_words = len(normalize(g.text))
             # Hints say "this is the narrator talking to the room". Without them, a
@@ -237,7 +247,7 @@ def cuts(
                 Cut(
                     "commentary",
                     source_id,
-                    _onset(mask, fps, g.start),
+                    start,
                     end,
                     confidence,
                     "off-script speech" + (" (sounds like a note to the room)" if hints else ""),
@@ -305,7 +315,8 @@ def _no_overlaps(cs: list[Cut]) -> list[Cut]:
     """Keep candidates disjoint: of two overlapping cuts keep the more confident
     (then the earlier); a cut must never take speech another cut keeps."""
     out: list[Cut] = []
-    for c in sorted(cs, key=lambda c: (-c.confidence, c.start)):
+    # An empty or backwards cut cuts nothing (and can't be stored): never keep one.
+    for c in sorted((c for c in cs if c.end > c.start), key=lambda c: (-c.confidence, c.start)):
         if all(c.end <= o.start or c.start >= o.end for o in out):
             out.append(c)
     return sorted(out, key=lambda c: c.start)

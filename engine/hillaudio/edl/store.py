@@ -379,6 +379,8 @@ def apply_cleanup(
         for c in found:
             sr = rates[c.source_id]
             a, b = round(c.start * sr), round(c.end * sr)
+            if b <= a:
+                continue  # cuts nothing; detection shouldn't send one, but never store it
             old = by_key.get(c.stable_key)
             if old is not None:
                 counts["kept"] += 1
