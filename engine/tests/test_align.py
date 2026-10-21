@@ -254,3 +254,12 @@ def test_short_aside_between_sentences_is_unaligned() -> None:
 def test_nothing_matches() -> None:
     c = compare(BOOK, words("completely unrelated chatter about the weather today"))
     assert c.readings == [] and len(c.unaligned) == 1
+
+
+def test_stutters_are_flagged_as_repeats_and_added_words_are_not() -> None:
+    for name, sid in (("ch01_take1.wav", "s02"), ("ch02_take1.wav", "s09")):
+        (r,) = of(run(name), sid)
+        assert [d.repeat for d in r.diffs] == [True]
+    c = compare(BOOK, words("The quick brown big fox jumps over the lazy dog."))
+    (r,) = c.readings
+    assert [(d.kind, d.heard, d.repeat) for d in r.diffs] == [("extra", "big", False)]

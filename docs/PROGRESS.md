@@ -118,7 +118,21 @@ Risks:
 - Long restarts appear as partial readings and short ones as "extra" differences (D-030); M5 must handle both.
 - Re-mapping pages clears comparison results (by design, D-031); the panel then says the results are out of date and asks for a re-run (transcripts are reused).
 
-## M4 · Issues pipeline: not started
+## M4 · Issues pipeline: in progress
+
+Plan:
+1. **`analysis/issues.py`** (pure).
+   - **Flubs:** a sentence with no clean complete take gets a flub issue, with the best take's timestamp, page, and expected vs heard text. A sentence never read gets a *missing line* issue.
+   - **Severity:** lowered to "check" when every error looks like a mishearing (a similar spelling, or a low-confidence heard word). Every false flag in the M3 benchmark was of that kind.
+   - **Repeats:** extra words that repeat neighbouring text are tagged as such. They are cleanup (M5), not flubs.
+   - **Silences:** pauses over 2.0 s within a paragraph, 3.0 s at paragraph breaks and 5.0 s at chapter breaks (SPEC §6.3.6). The boundary type comes from the alignment.
+2. **Stable keys and re-run reconciliation** (SPEC §4, §6.7). Keys come from the issue kind and the sentence text in context (not unit ids, which re-mapping replaces). Re-runs mark issues *new*, *still open*, *auto-resolved* or *regressed*. User decisions (dismissed, notes) are preserved. Auto-resolution is logged `auto` and reversible (reopen).
+3. **Store, pipeline and API.** Schema v4 `issue` table; `flubs`/`silences` as pipeline stages; issue settings; status, note and bulk endpoints (logged); an audio excerpt endpoint for jump-to-audio with ±3 s of context.
+4. **Issues panel.** Sortable and filterable (kind, status, change). Keyboard shortcuts for every review action: next/previous, play, resolve, dismiss, reopen, note, select and bulk.
+5. **Tests.** Precision/recall for flub and silence detection on the fixtures (perfect and noisy fake ASR, and real small.en); reconciliation states; API, UI and e2e.
+- **Risks.**
+  - Silence detection depends on the speech threshold in noisy rooms.
+  - Severity heuristics could hide real misreads of similar-looking words. Mitigation: "check" issues are still listed, only ranked lower.
 
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.

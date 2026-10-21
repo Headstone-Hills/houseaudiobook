@@ -328,6 +328,80 @@ def report_compare(results: list[ModelResult]) -> str:
     return "\n".join(lines)
 
 
+def report_issues(results: list[ModelResult]) -> str:
+    """M4 issues on each model's transcripts: is the injected skip flagged, and how
+    many false issues are high severity (the ones a reviewer must look at)?"""
+    from dataclasses import asdict
+
+    from hillaudio.analysis.issues import IssueSettings, ReadingInfo, SentenceInfo, text_issues
+    from hillaudio.text.extract_txt import extract_text
+    from hillaudio.text.pages import PageSettings, build_page_map
+    from hillaudio.text.units import build_units
+
+    s = PageSettings()
+    doc = extract_text((FIXTURES / "manuscript.txt").read_bytes(), s)
+    units = build_units(doc, build_page_map(doc, s))
+    sents = [
+        SentenceInfo(
+            u.ordinal, u.ordinal, u.text, u.page.label, u.parent if u.parent is not None else -1, 0
+        )
+        for u in units
+        if u.kind == "sentence"
+    ]
+    truth = json.loads((FIXTURES / "ground_truth.json").read_text())
+    # Sentences that really need correcting: injected text errors without a clean
+    # take anywhere (the misread has a clean pickup in take 2; the skip doesn't).
+    need = {
+        int(e["sentence_id"][1:])
+        for f in truth["files"]
+        for e in f["events"]
+        if e["type"] in ("misread", "skip")
+    }
+    need -= {
+        int(e["sentence_id"][1:])
+        for f in truth["files"]
+        for e in f["events"]
+        if e["type"] == "read"
+    }
+    lines = [
+        "| Model | needed flagged | false issues: high | false issues: low (check) |",
+        "|---|---|---|---|",
+    ]
+    for r in results:
+        rs = []
+        for i, fr in enumerate(r.files):
+            import soundfile as sf
+
+            audio, sr = sf.read(str(FIXTURES / fr.name), dtype="float32")
+            env = envelope(audio, sr)
+            words = [cmp.Word(w.text, w.start, w.end, w.prob) for w in fr.words]
+            c = cmp.compare(
+                [cmp.Sentence(x.ordinal, x.text) for x in sents], words, speech_mask(env), env.fps
+            )
+            rs += [
+                ReadingInfo(
+                    x.sentence_key,
+                    i,
+                    x.start,
+                    x.end,
+                    x.coverage,
+                    x.score,
+                    x.heard,
+                    tuple(asdict(d) for d in x.diffs),
+                )
+                for x in c.readings
+            ]
+        issues = text_issues(sents, rs, IssueSettings())
+        flagged = {i.unit_id for i in issues}
+        false = [i for i in issues if i.unit_id not in need]
+        lines.append(
+            f"| {r.model} | {len(flagged & need)}/{len(need)} | "
+            f"{sum(i.severity == 'high' for i in false)} | "
+            f"{sum(i.severity != 'high' for i in false)} |"
+        )
+    return "\n".join(lines)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--models", nargs="+", default=["small.en", "medium.en", "large-v3-turbo"])
@@ -351,6 +425,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(report(loaded))
         print()
         print(report_compare(loaded))
+        print()
+        print(report_issues(loaded))
         return 0
 
     results: list[ModelResult] = []
@@ -362,6 +438,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(report(results))
     print()
     print(report_compare(results))
+    print()
+    print(report_issues(results))
     if args.dump:
         args.dump.write_text(
             json.dumps(

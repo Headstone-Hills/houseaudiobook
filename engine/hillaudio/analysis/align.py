@@ -76,6 +76,9 @@ class Diff:
     m_end: int | None
     t_start: int | None  # transcript token range (None: nothing heard)
     t_end: int | None
+    # For "extra": the words repeat the text right after (or before) them, as in a
+    # stutter or restart ("The. The vine"). Repeats are cleanup (M5), not flubs.
+    repeat: bool = False
 
 
 @dataclass
@@ -439,6 +442,35 @@ def _classify(block: list[Op], m_toks: Sequence[str], t_toks: Sequence[str]) -> 
     return "substitution"
 
 
+def _tokens_at(m_toks: Sequence[str], m0: int, want: Sequence[str]) -> bool:
+    """Do the manuscript tokens starting at m0 equal `want`?"""
+    seg = m_toks[m0 : m0 + len(want)] if m0 >= 0 else []
+    return len(seg) == len(want) and all(tokens_equal(a, b) for a, b in zip(seg, want, strict=True))
+
+
+def _mark_repeats(
+    diffs: list[Diff], ops: list[Op], m_toks: Sequence[str], t_toks: Sequence[str]
+) -> list[Diff]:
+    """Flag extra-word blocks that repeat the manuscript words next to them."""
+    pos_of_t = {op.t: i for i, op in enumerate(ops) if op.t is not None}
+    out = []
+    for d in diffs:
+        if d.kind != "extra" or d.t_start is None or d.t_end is None:
+            out.append(d)
+            continue
+        heard = list(t_toks[d.t_start : d.t_end])
+        n = len(heard)
+        first, last = pos_of_t[d.t_start], pos_of_t[d.t_end - 1]
+        after = next((op.m for op in ops[last + 1 :] if op.m is not None), None)
+        before = next((op.m for op in reversed(ops[:first]) if op.m is not None), None)
+
+        repeat = (after is not None and _tokens_at(m_toks, after, heard)) or (
+            before is not None and _tokens_at(m_toks, before - n + 1, heard)
+        )
+        out.append(Diff(d.kind, d.m_start, d.m_end, d.t_start, d.t_end, repeat=repeat))
+    return out
+
+
 def _diffs(
     ops: list[Op], m_toks: Sequence[str], t_toks: Sequence[str], probs: Sequence[float] | None
 ) -> list[Diff]:
@@ -501,6 +533,8 @@ def _diffs(
         else:
             block.append(op)
     flush()
+
+    out = _mark_repeats(out, ops, m_toks, t_toks)
 
     # A missing stretch whose words show up as an extra stretch elsewhere in the
     # same reading was said out of order.

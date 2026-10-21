@@ -40,6 +40,8 @@ class DiffOut:
     heard: str  # transcript text ("" when nothing was heard, e.g. missing words)
     start: float | None  # when it happened in the recording (None for pure omissions)
     end: float | None
+    repeat: bool = False  # extra words repeating adjacent text (a stutter or restart)
+    confidence: float | None = None  # mean ASR probability of the heard words
 
 
 @dataclass
@@ -148,11 +150,13 @@ def compare(
         expected = ""
         if d.m_start is not None and d.m_end is not None:
             expected = _span_text(text, m_toks, d.m_start, d.m_end)
-        heard, start, end = "", None, None
+        heard, start, end, conf = "", None, None, None
         if d.t_start is not None and d.t_end is not None:
             heard = words_text(d.t_start, d.t_end)
             start, end = times(d.t_start, d.t_end)
-        return DiffOut(d.kind, expected, heard, start, end)
+            idx = sorted({word_of[t] for t in range(d.t_start, d.t_end)})
+            conf = sum(words[i].prob for i in idx) / len(idx)
+        return DiffOut(d.kind, expected, heard, start, end, d.repeat, conf)
 
     out: list[SentenceReading] = []
     for r in rs:
