@@ -26,6 +26,8 @@ hillaudio = "hillaudio.cli:main"
 # $HILLAUDIO_HOME/models and are never committed.
 asr = [
     "faster-whisper>=1.2",
+    # faster-whisper 1.2.1 passes av.open(metadata_errors=...), which PyAV 19 removed.
+    "av<19",
 ]
 dev = [
     "pytest>=8",
