@@ -4,6 +4,12 @@ import { App } from "./App";
 import { FakeWebSocket } from "./test-setup";
 import { FUNCTIONS, SETTINGS, mockApi, project, source } from "./test-utils";
 
+/** Go to a step from the sidebar. */
+async function openStep(name: string) {
+  const nav = await screen.findByRole("navigation", { name: "Steps" });
+  fireEvent.click(within(nav).getByRole("button", { name: new RegExp(`^${name}`) }));
+}
+
 const home = {
   "GET /api/settings": SETTINGS,
   "GET /api/functions": FUNCTIONS,
@@ -87,6 +93,7 @@ test("project screen: sources, warnings, relink, and refresh when a job finishes
   });
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "Old Book" }));
+  await openStep("Recordings");
 
   const table = await screen.findByRole("table");
   expect(within(table).getByRole("rowheader", { name: "ch01" })).toBeInTheDocument();
@@ -117,6 +124,7 @@ test("arrow keys move the selected source", async () => {
   });
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "Old Book" }));
+  await openStep("Recordings");
   const rows = await screen.findAllByRole("row");
   fireEvent.keyDown(rows[1]!, { key: "ArrowDown" });
   expect(await screen.findByRole("img", { name: /Waveform of ch02/ })).toBeInTheDocument();

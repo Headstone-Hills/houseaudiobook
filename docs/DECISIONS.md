@@ -799,3 +799,64 @@ global alignment:
     FFmpeg tarball and signature, the LAME tarball, and the script.
   - CI uploads them as the `ffmpeg-source` artifact, next to the `.dmg`. They
     are not bundled in the app.
+
+## D-059 · Chapter workspaces, and audio that covers only part of the book (2026-10-21)
+The user asked to work on one chapter at a time, and for audio that covers only
+part of the manuscript not to flag the rest as missing.
+- **Text no recording reaches yet is "not recorded", not missing.**
+  `analysis/issues.unrecorded` decides, per chapter, from the readings of the
+  latest Compare to Text run:
+  - Every line of a chapter nobody has read from is not recorded yet.
+  - In a chapter that was read from, a run of unread lines before its first
+    read line or after its last is not recorded yet if it's at least 3 lines
+    (`MIN_UNRECORDED_RUN`). A line or two at an edge stays a skip: a forgotten
+    chapter title, a dropped last line.
+  - Unread lines between read ones are skips, however many. That's where a
+    narrator loses their place.
+  - The scope comes from every reading, before cuts: cutting a line later makes
+    it missing, as before.
+  - Not-recorded lines get no Unread line issue. The comparison marks them
+    `recorded: false`, and the UI counts them apart from skipped lines.
+- **Chapters are workspaces, not separate projects.** The user chose this over
+  splitting the book into one project per chapter.
+  - A chapter is a chapter heading in the manuscript. Text before the first
+    heading is one more workspace, "Opening pages". Nothing is stored:
+    `chapters.chapters()` derives each chapter's lines, status, place in each
+    recording and on the timeline, and open issues on request.
+  - Which audio belongs to which chapter comes from the alignment. The user
+    never assigns files to chapters, and a file can hold several chapters.
+  - Picking a chapter narrows every step to it: lines and issues by sentence;
+    cuts and off-script speech by time in the chapter's part of each
+    recording; takes by line; the timeline opens on the chapter.
+  - Export and the corrections guide take a `chapter` parameter. A chapter's
+    file keeps its number in the book (`02_Chapter_Two…`), so files exported
+    one chapter at a time sort together.
+  - Analysis still runs on the whole book. Transcripts are cached per file, so
+    re-checking after adding one chapter's audio is quick.
+  - The edit history (EDL) is the book's: undo on a chapter can undo an edit
+    made in another.
+
+## D-060 · One step at a time, in plainer words (2026-10-21)
+The user found the single long page hard to follow: unclear what to do next,
+too technical, too dense, and slow to act on issues.
+- **Steps.** A sidebar lists the workflow in order: Overview, Recordings,
+  Manuscript, Check the reading, Fix mistakes, Clean up, Choose takes, Edit,
+  Export. Only the chosen step is on screen, with its purpose in one sentence
+  and a Next button. Each step shows its state in the sidebar (done, to do, a
+  count to review, waiting on an earlier step). It's worked out in
+  `state/steps.ts` from data the engine already has.
+- **Overview.** Says the one thing to do next, lists every step's state, and
+  lists the chapters to pick from.
+- **Remembered.** The step and chapter are kept per project in the browser's
+  local storage, so a reload comes back to the same place.
+- **Words.** Engine terms gave way to plain ones in the UI: "Compare to Text" →
+  "Check the reading", resolved/dismissed → "Fixed"/"OK as is", removed/restored
+  → "cut"/"kept", "not read" → "skipped". The engine's names are unchanged.
+- **Issues.** Each issue is a card: a large play button, what's wrong, and its
+  own Fixed / OK as is buttons. Bulk actions appear only once issues are ticked.
+  Keyboard shortcuts are unchanged and listed under a disclosure.
+- **Undo.** ⌘/Ctrl+Z worked from anywhere only because the Removed panel was
+  always on the page. It's now registered by the project page for every step
+  (`state/undo.ts`).
+- **Look.** Cards, a sticky top bar with the chapter picker, chips for status,
+  and stat rows for counts, in light and dark.

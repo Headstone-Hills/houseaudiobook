@@ -20,7 +20,17 @@ from pydantic import BaseModel, Field
 
 from hillaudio import __version__, functions, settings, tools
 from hillaudio.analysis.peaks import BASE, FACTOR, LEVELS, Peaks
-from hillaudio.api import analysis, edl, finalize, issues, manuscript, models, takes, timeline
+from hillaudio.api import (
+    analysis,
+    chapters,
+    edl,
+    finalize,
+    issues,
+    manuscript,
+    models,
+    takes,
+    timeline,
+)
 from hillaudio.api.guard import DEFAULT_HOSTS, LocalOnlyGuard, allowed_origins
 from hillaudio.api.jobs import JobContext
 from hillaudio.api.state import EngineState, TranscriberFactory
@@ -328,6 +338,7 @@ def create_app(
 
     app.include_router(manuscript.router)
     app.include_router(analysis.router)
+    app.include_router(chapters.router)
     app.include_router(issues.router)
     app.include_router(edl.router)
     app.include_router(takes.router)

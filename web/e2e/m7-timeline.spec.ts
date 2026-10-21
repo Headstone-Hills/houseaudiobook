@@ -2,10 +2,8 @@
 // (split, select + ripple delete, trim, gain, fades, tracks, markers, snapping),
 // with the realtime preview playing straight from the EDL in the browser.
 import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
-
-const FIXTURES = resolve(import.meta.dirname, "../../engine/fixtures");
+import { importAudio, step } from "./steps";
 
 type View = {
   duration: number;
@@ -26,11 +24,8 @@ test("edit on the timeline and preview from the EDL", async ({ page }) => {
   await page.getByLabel("Name").fill("Timeline");
   await page.getByLabel("Location").fill(projects);
   await page.getByRole("button", { name: "Create project" }).click();
-  await page
-    .getByLabel(/import by path/)
-    .fill(["ch01_take1.wav", "ch01_take2.wav", "ch02_take1.wav"].map((n) => `${FIXTURES}/${n}`).join("\n"));
-  await page.getByRole("button", { name: "Import", exact: true }).click();
-  await expect(page.locator("table.sources tbody tr")).toHaveCount(3, { timeout: 20_000 });
+  await importAudio(page);
+  await step(page, "Edit");
 
   const get = async () => (await (await page.request.get("/api/project/timeline")).json()) as View;
   const panel = page.locator("section.timeline");

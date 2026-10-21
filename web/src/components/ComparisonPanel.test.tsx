@@ -74,26 +74,75 @@ test("runs the analysis and shows sentences with differences by default", async 
     },
   });
   render(<ComparisonPanel canRun why={null} revision={0} onError={() => {}} />);
-  expect(await screen.findByText("1 clean · 1 with differences · 1 not read · 1 off-script passage")).toBeInTheDocument();
+  const summary = await screen.findByRole("list", { name: "Summary" });
+  expect(summary).toHaveTextContent("1 read correctly1 read differently1 skipped1 off-script");
   const list = screen.getByRole("list", { name: "Sentences" });
   expect(within(list).getByText(/out of reach\./)).toBeInTheDocument();
   // Shown under the sentence, and again in its (collapsed) table of takes.
   const [inline, inTakes] = screen.getAllByText("Misread: “reach” → “sight.”");
   expect(inline).toBeVisible();
   expect(inTakes).not.toBeVisible();
-  fireEvent.click(screen.getAllByText("Show all takes")[0]!);
+  fireEvent.click(screen.getAllByText("Every reading (1)")[0]!);
   expect(inTakes).toBeVisible();
   expect(screen.queryByText("Chapter One.")).not.toBeInTheDocument(); // clean: filtered out
   expect(screen.getByText(/Hold on, let me get some water/)).toBeInTheDocument();
   expect(screen.getByText(/audio never leaves the machine/)).toBeInTheDocument();
 
-  fireEvent.click(screen.getByLabelText("Not read"));
+  fireEvent.click(screen.getByLabelText(/^Skipped/));
   expect(screen.getByText("Never read.")).toBeInTheDocument();
   expect(screen.getByText(/p\. 2–3/)).toBeInTheDocument();
 
   fireEvent.change(screen.getByLabelText("Speech model"), { target: { value: "tiny.en" } });
-  fireEvent.click(screen.getByRole("button", { name: "Transcribe and compare" }));
+  fireEvent.click(screen.getByRole("button", { name: "Check again" }));
   await waitFor(() => expect(runs).toEqual([{ stages: null, asr: { model: "tiny.en" } }]));
+});
+
+test("text no recording reaches yet is 'not recorded', not skipped (D-059)", async () => {
+  const partial: Comparison = {
+    ...DATA,
+    sentences: [
+      ...DATA.sentences.slice(0, 2),
+      sentence({ unit_id: 3, ordinal: 2, text: "Never read.", page_label: "2", page_end_label: "3", recorded: true }),
+      sentence({ unit_id: 4, ordinal: 3, text: "Chapter Two.", page_label: "3", page_end_label: "3", recorded: false }),
+      sentence({ unit_id: 5, ordinal: 4, text: "Later on.", page_label: "3", page_end_label: "3", recorded: false }),
+    ],
+  };
+  mockApi({ "GET /api/asr": ASR, "GET /api/project/comparison": partial });
+  render(<ComparisonPanel canRun why={null} revision={0} onError={() => {}} />);
+  const summary = await screen.findByRole("list", { name: "Summary" });
+  expect(summary).toHaveTextContent("1 skipped");
+  expect(summary).toHaveTextContent("2 not recorded yet");
+  expect(screen.getByText(/cover only part of the manuscript/)).toHaveTextContent("2 lines no recording reaches yet");
+  fireEvent.click(screen.getByLabelText(/^Not recorded yet/));
+  const list = screen.getByRole("list", { name: "Sentences" });
+  expect(within(list).getByText(/Later on\./)).toBeInTheDocument();
+  expect(within(list).getAllByText(/not recorded yet/)).toHaveLength(2);
+  expect(within(list).queryByText(/Never read\./)).not.toBeInTheDocument();
+});
+
+test("a chapter shows only its own lines and off-script speech", async () => {
+  mockApi({ "GET /api/asr": ASR, "GET /api/project/comparison": DATA });
+  const chapter = {
+    id: 9,
+    number: 1,
+    title: "Chapter One.",
+    page_label: "1",
+    status: "recorded" as const,
+    sentences: 2,
+    read: 2,
+    not_recorded: 0,
+    sentence_ids: [1, 2],
+    spans: [{ source_id: 1, start: 0, end: 20 }],
+    timeline: null,
+    open_issues: 0,
+  };
+  render(<ComparisonPanel canRun why={null} revision={0} scope={chapter} onError={() => {}} />);
+  const summary = await screen.findByRole("list", { name: "Summary" });
+  expect(summary).toHaveTextContent("1 read correctly1 read differently0 skipped0 off-script");
+  fireEvent.click(screen.getByLabelText(/^Every line/));
+  const list = screen.getByRole("list", { name: "Sentences" });
+  expect(within(list).getAllByRole("listitem").filter((li) => li.parentElement === list)).toHaveLength(2);
+  expect(screen.queryByText(/Hold on/)).not.toBeInTheDocument(); // at 0:23, after the chapter's part
 });
 
 test("explains why it can't run yet", async () => {
@@ -106,7 +155,7 @@ test("explains why it can't run yet", async () => {
 test("out-of-date results ask for a re-run instead of showing", async () => {
   mockApi({ "GET /api/asr": ASR, "GET /api/project/comparison": { ...DATA, stale: true } });
   render(<ComparisonPanel canRun why={null} revision={0} onError={() => {}} />);
-  expect(await screen.findByText(/pages changed after this comparison/)).toBeInTheDocument();
+  expect(await screen.findByText(/pages changed after this check/)).toBeInTheDocument();
   expect(screen.queryByRole("list", { name: "Sentences" })).not.toBeInTheDocument();
 });
 

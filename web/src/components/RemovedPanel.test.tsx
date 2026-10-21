@@ -94,7 +94,9 @@ const focus = (el: HTMLElement | undefined) => act(() => el?.focus());
 describe("RemovedPanel", () => {
   test("summarizes the timeline and lists what was removed or suggested", async () => {
     setup();
-    expect(await screen.findByText(/Timeline 1:03\.\d of 1:06\.6 recorded · 3\.\d s removed · 2 removed · 1 suggested · 0 restored/)).toBeInTheDocument();
+    const summary = await screen.findByRole("list", { name: "Summary" });
+    expect(summary).toHaveTextContent("1 suggested2 cut0 kept");
+    expect(screen.getByText(/1:03\.\d after editing, from 1:06\.6 recorded \(3\.\d s cut\)/)).toBeInTheDocument();
     const rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
     expect(rows).toHaveLength(3);
     expect(rows[0]).toHaveTextContent("Stutter");
@@ -117,9 +119,9 @@ describe("RemovedPanel", () => {
     await waitFor(() =>
       expect(calls(fetch, "POST")).toContainEqual(["/api/project/edl/regions/status", { ids: [2], status: "restored" }]),
     );
-    await waitFor(() => expect(rows()[1]).toHaveTextContent("Restored"));
+    await waitFor(() => expect(rows()[1]).toHaveTextContent("Kept"));
     expect(onEdited).toHaveBeenCalled();
-    expect(screen.getByText("The timeline changed: re-run checks to update the Issues list.")).toBeInTheDocument();
+    expect(screen.getByText("The edit changed: re-run checks (under Fix mistakes) to update the list of mistakes.")).toBeInTheDocument();
     fireEvent.keyDown(table, { key: "a" });
     await waitFor(() =>
       expect(calls(fetch, "POST")).toContainEqual(["/api/project/edl/regions/status", { ids: [2], status: "removed" }]),
@@ -170,7 +172,9 @@ describe("RemovedPanel", () => {
       "GET /api/project/cleanup-settings": SETTINGS,
     });
     render(<RemovedPanel revision={0} onEdited={() => undefined} onError={() => undefined} />);
-    expect(await screen.findByText(/1 removed · 0 suggested · 0 restored · 1 other take \(see Takes\)/)).toBeInTheDocument();
+    expect(await screen.findByRole("list", { name: "Summary" })).toHaveTextContent(
+      "0 suggested1 cut0 kept1 other take (see Choose takes)",
+    );
     expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2);
   });
 });

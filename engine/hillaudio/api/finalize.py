@@ -26,6 +26,7 @@ class ExportRequest(BaseModel):
     format: fz.Format = "mp3"
     split: fz.Split = "single"
     kbps: int | None = Field(default=None, ge=32, le=320)
+    chapter: int | None = None  # a chapter workspace's export: just that chapter
 
 
 class AnalyzeRequest(BaseModel):
@@ -113,26 +114,39 @@ def preview(
 
 @router.get("/api/project/export/preflight")
 def preflight(
-    state: State, format: fz.Format = "mp3", split: fz.Split = "single"
+    state: State,
+    format: fz.Format = "mp3",
+    split: fz.Split = "single",
+    chapter: int | None = None,
 ) -> dict[str, Any]:
-    return fz.preflight(state.require_project(), format, split)
+    return fz.preflight(state.require_project(), format, split, chapter)
 
 
 @router.post("/api/project/export")
 def export(state: State, body: ExportRequest) -> dict[str, str]:
     p = state.require_project()
-    pf = fz.preflight(p, body.format, body.split)
+    pf = fz.preflight(p, body.format, body.split, body.chapter)
     if pf["problems"]:
         raise HTTPException(409, pf["problems"][0])
     label = f"Export {body.format.upper()}" + (
-        f" by {body.split}" if body.split != "single" else ""
+        " of one chapter"
+        if body.chapter is not None
+        else f" by {body.split}"
+        if body.split != "single"
+        else ""
     )
     return _job(
         state,
         "export",
         label,
         lambda p, ctx: fz.export(
-            p, body.format, body.split, body.kbps, ctx.progress, ctx.check_cancel
+            p,
+            body.format,
+            body.split,
+            body.kbps,
+            ctx.progress,
+            ctx.check_cancel,
+            chapter=body.chapter,
         ),
     )
 
@@ -162,11 +176,12 @@ def guide_file(
     narrator: Annotated[str, Query(max_length=200)] = "",
     include_resolved: bool = False,
     include_silences: bool = False,
+    chapter: int | None = None,
 ) -> Response:
     p = state.require_project()
     if format not in TYPES:
         raise HTTPException(400, "format must be csv, md or pdf")
-    o = guide.GuideOptions(reference, sort, narrator, include_resolved, include_silences)
+    o = guide.GuideOptions(reference, sort, narrator, include_resolved, include_silences, chapter)
     if format == "csv":
         body: bytes = guide.to_csv(p, o).encode()
     elif format == "md":
@@ -188,8 +203,9 @@ def guide_rows(
     sort: guide.Sort = "page",
     include_resolved: bool = False,
     include_silences: bool = False,
+    chapter: int | None = None,
 ) -> dict[str, Any]:
     p = state.require_project()
-    o = guide.GuideOptions(reference, sort, "", include_resolved, include_silences)
+    o = guide.GuideOptions(reference, sort, "", include_resolved, include_silences, chapter)
     rs = guide.rows(p, o)
     return {"header": guide.header(p, o, rs), "rows": rs}

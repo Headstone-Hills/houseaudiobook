@@ -14,6 +14,7 @@ import {
   clipAt,
   clipKey,
   fit,
+  fitRange,
   follow,
   nextSnap,
   snapPoints,
@@ -42,6 +43,8 @@ interface Props {
   sources: Source[];
   peakSettings: PeakSettings;
   revision: number;
+  /** A chapter's place on the timeline: shown first, and what Fit fits (D-059). */
+  focus?: { start: number; end: number } | null;
   onEdited: () => void;
   onError: (msg: string) => void;
 }
@@ -54,7 +57,7 @@ type Drag =
 
 /** Multitrack timeline editor (SPEC §6.6). Keyboard first: every tool has a key
  * (see the key list under the toolbar); the mouse does the same by dragging. */
-export function TimelinePanel({ sources, peakSettings, revision, onEdited, onError }: Props) {
+export function TimelinePanel({ sources, peakSettings, revision, focus = null, onEdited, onError }: Props) {
   const [view, setView] = useState<TimelineView | null>(null);
   const [lanes, setLanes] = useState<Lanes | null>(null);
   const [vp, setVp] = useState<Viewport>({ start: 0, pps: 20, width: 1000 });
@@ -76,6 +79,11 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
 
   // -- data ---------------------------------------------------------------------------------
 
+  // The first load fits the chapter (or the book); later loads keep the view.
+  const focusRef = useRef(focus);
+  useEffect(() => {
+    focusRef.current = focus;
+  }, [focus]);
   useEffect(() => {
     let cancelled = false;
     api
@@ -83,13 +91,33 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
       .then((v) => {
         if (cancelled) return;
         setView(v);
-        setVp((old) => (old.start === 0 && old.pps === 20 ? fit(v.duration, old.width) : old));
+        const f = focusRef.current;
+        setVp((old) =>
+          old.start === 0 && old.pps === 20
+            ? f
+              ? fitRange(f.start, f.end, old.width)
+              : fit(v.duration, old.width)
+            : old,
+        );
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, [revision]);
+
+  // Another chapter chosen: go to it (adjusting state as the prop changes, not in an effect).
+  const focusKey = focus ? `${focus.start}:${focus.end}` : "";
+  const [seenFocus, setSeenFocus] = useState(focusKey);
+  if (focusKey !== seenFocus) {
+    setSeenFocus(focusKey);
+    if (focus) {
+      setVp((v) => fitRange(focus.start, focus.end, v.width));
+      setPlayhead(focus.start);
+    }
+  }
+  const fitAll = (v: Viewport) =>
+    focus ? fitRange(focus.start, focus.end, v.width) : fit(view?.duration ?? 0, v.width);
 
   useEffect(() => {
     const el = box.current;
@@ -361,7 +389,7 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
         case "Z":
           return setVp((v) => zoom(v, 0.5, playhead)), true;
         case "0":
-          return view && setVp((v) => fit(view.duration, v.width)), true;
+          return view && setVp(fitAll), true;
         case "n":
           return setSnap((s) => !s), true;
       }
@@ -684,9 +712,14 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
         <button type="button" onClick={() => setVp((v) => zoom(v, 0.5, playhead))}>
           Zoom out
         </button>
-        <button type="button" onClick={() => setVp((v) => fit(view.duration, v.width))}>
-          Fit
+        <button type="button" onClick={() => setVp(fitAll)}>
+          {focus ? "Fit chapter" : "Fit"}
         </button>
+        {focus && (
+          <button type="button" onClick={() => setVp((v) => fit(view.duration, v.width))}>
+            Whole book
+          </button>
+        )}
         <label>
           <input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} /> Snap
         </label>
@@ -706,12 +739,15 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
           Render preview
         </button>
       </div>
-      <p className="muted" id="timeline-keys">
-        Keys: Space play · ←/→ 1 s (Shift 10 s) · Alt+←/→ snap · Home/End · ↑/↓ track · Tab clip · [ ] selection ·
-        Delete ripple delete · S split · Shift+[ ] trim to playhead · , . roll · Alt+Shift+←/→ move clip · Alt+↑/↓
-        move to track · +/− gain · F/G fade in/out · U mute clip · Shift+U/Shift+S mute/solo track · M marker · T add
-        track · Shift+R restore cut · P render preview · Z/Shift+Z zoom · 0 fit · N snap on/off · ⌘/Ctrl+Z undo
-      </p>
+      <details className="keys">
+        <summary>Keyboard shortcuts</summary>
+        <p className="muted" id="timeline-keys">
+          Space play · ←/→ 1 s (Shift 10 s) · Alt+←/→ snap · Home/End · ↑/↓ track · Tab clip · [ ] selection · Delete
+          ripple delete · S split · Shift+[ ] trim to playhead · , . roll · Alt+Shift+←/→ move clip · Alt+↑/↓ move to
+          track · +/− gain · F/G fade in/out · U mute clip · Shift+U/Shift+S mute/solo track · M marker · T add track ·
+          Shift+R restore cut · P render preview · Z/Shift+Z zoom · 0 fit · N snap on/off · ⌘/Ctrl+Z undo
+        </p>
+      </details>
       <p role="status" aria-live="polite" className="muted">
         {status}
         {sel ? ` · selection ${timecode(sel[0])}–${timecode(sel[1])}` : ""}

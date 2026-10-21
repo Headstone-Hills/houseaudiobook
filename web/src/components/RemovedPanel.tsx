@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   api,
   excerptUrl,
@@ -12,6 +12,8 @@ import {
 } from "../state/engine";
 import { clock } from "../state/comparison";
 import { plural } from "../state/format";
+import { hasAudio, type Scope } from "../state/scope";
+import { useUndoShortcuts } from "../state/undo";
 
 const REGION_LABELS: Record<RegionKind, string> = {
   stutter: "Stutter",
@@ -22,9 +24,9 @@ const REGION_LABELS: Record<RegionKind, string> = {
   take: "Other take",
 };
 const STATUS_LABELS: Record<RegionStatus, string> = {
-  removed: "Removed",
+  removed: "Cut",
   suggested: "Suggested",
-  restored: "Restored",
+  restored: "Kept",
 };
 const NUDGE_S = 0.05; // one keypress of trimming or rolling
 
@@ -32,13 +34,16 @@ type Filter = RegionStatus | "all";
 
 interface Props {
   revision: number; // bumped when analysis finishes or another panel edits
+  scope?: Scope; // a chapter: only the cuts in its part of the recordings (D-059)
+  /** ⌘/Ctrl+Z here; off when the page handles undo for every step. */
+  undoKeys?: boolean;
   onEdited: () => void;
   onError: (msg: string) => void;
 }
 
 /** Removed material (SPEC §5, §6.6): every cut the cleanup made or suggested, and
  * the user's own; restore, re-apply, trim or roll each one; undo/redo. */
-export function RemovedPanel({ revision, onEdited, onError }: Props) {
+export function RemovedPanel({ revision, scope = null, undoKeys = true, onEdited, onError }: Props) {
   const [edl, setEdl] = useState<Edl | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [currentId, setCurrentId] = useState<number | null>(null);
@@ -68,30 +73,22 @@ export function RemovedPanel({ revision, onEdited, onError }: Props) {
       })
       .catch(fail);
 
-  // Undo/redo from anywhere on the page, except while typing. A layout effect, so
-  // the listener sees the new state in the same commit that shows it: a passive
-  // effect left a gap where a quick Shift+Ctrl+Z after an undo was ignored.
-  useLayoutEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      const tag = (e.target as HTMLElement | null)?.tagName ?? "";
-      if (["INPUT", "TEXTAREA", "SELECT"].includes(tag) || !(e.metaKey || e.ctrlKey)) return;
-      const key = e.key.toLowerCase();
-      if (key === "z" && !e.shiftKey && edl?.undo) {
-        e.preventDefault();
-        apply(api.undo());
-      } else if (((key === "z" && e.shiftKey) || key === "y") && edl?.redo) {
-        e.preventDefault();
-        apply(api.redo());
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
+  // Undo/redo from anywhere on the page, unless the page handles them for every step.
+  useUndoShortcuts(
+    edl?.undo ? () => apply(api.undo()) : null,
+    edl?.redo ? () => apply(api.redo()) : null,
+    undoKeys,
+  );
 
   // Takes are chosen in the Takes panel: restoring another take here would make
   // the line play twice, so take cuts are only counted (D-045).
-  const listed = useMemo(() => (edl?.regions ?? []).filter((r) => r.kind !== "take"), [edl]);
-  const otherTakes = (edl?.regions ?? []).filter((r) => r.kind === "take" && r.status === "removed").length;
+  const listed = useMemo(
+    () => (edl?.regions ?? []).filter((r) => r.kind !== "take" && hasAudio(scope, r.source_file_id, r.start, r.end)),
+    [edl, scope],
+  );
+  const otherTakes = (edl?.regions ?? []).filter(
+    (r) => r.kind === "take" && r.status === "removed" && hasAudio(scope, r.source_file_id, r.start, r.end),
+  ).length;
   const shown = useMemo(() => listed.filter((r) => filter === "all" || r.status === filter), [listed, filter]);
   const current = shown.find((r) => r.id === currentId) ?? null;
   const count = (s: RegionStatus) => listed.filter((r) => r.status === s).length;
@@ -176,10 +173,26 @@ export function RemovedPanel({ revision, onEdited, onError }: Props) {
   return (
     <section aria-labelledby="removed-heading" className="removed">
       <h2 id="removed-heading">Removed material</h2>
-      <p aria-live="polite">
-        Timeline {clock(edl.duration)} of {clock(edl.original_duration)} recorded · {removedS.toFixed(1)} s removed ·{" "}
-        {count("removed")} removed · {count("suggested")} suggested · {count("restored")} restored
-        {otherTakes > 0 && ` · ${plural(otherTakes, "other take")} (see Takes)`}
+      <ul className="stat-row" aria-label="Summary" aria-live="polite">
+        <li className={count("suggested") ? "stat-warn" : ""}>
+          <strong>{count("suggested")}</strong> suggested
+        </li>
+        <li>
+          <strong>{count("removed")}</strong> cut
+        </li>
+        <li>
+          <strong>{count("restored")}</strong> kept
+        </li>
+        {otherTakes > 0 && (
+          <li>
+            <strong>{otherTakes}</strong> other take{otherTakes === 1 ? "" : "s"} (see Choose takes)
+          </li>
+        )}
+      </ul>
+      <p className="muted">
+        {scope ? "The whole book: " : ""}
+        {clock(edl.duration)} after editing, from {clock(edl.original_duration)} recorded ({removedS.toFixed(1)} s
+        cut). Suggested cuts aren&apos;t made until you apply them.
       </p>
       <div className="run-row">
         <button type="button" onClick={() => apply(api.undo())} disabled={!edl.undo}>
@@ -191,21 +204,24 @@ export function RemovedPanel({ revision, onEdited, onError }: Props) {
         <label htmlFor="removed-filter">Show</label>
         <select id="removed-filter" value={filter} onChange={(e) => setFilter(e.target.value as Filter)}>
           <option value="all">All</option>
-          <option value="removed">Removed</option>
           <option value="suggested">Suggested</option>
-          <option value="restored">Restored</option>
+          <option value="removed">Cut</option>
+          <option value="restored">Kept</option>
         </select>
         <audio ref={audio} controls aria-label="Removed material audio" />
       </div>
       {editedHere && (
         <p role="status" className="muted">
-          The timeline changed: re-run checks to update the Issues list.
+          The edit changed: re-run checks (under Fix mistakes) to update the list of mistakes.
         </p>
       )}
-      <p className="muted" id="removed-keys">
-        Keys: ↑/↓ or j/k move · Space play as edited · p play what was cut · r restore · a apply · [ ] bring back 50 ms
-        at the start/end · , . move the cut 50 ms · ⌘/Ctrl+Z undo · Shift+⌘/Ctrl+Z redo
-      </p>
+      <details className="keys">
+        <summary>Keyboard shortcuts</summary>
+        <p className="muted" id="removed-keys">
+          ↑/↓ or j/k move · Space play as edited · p play what was cut · r keep it · a cut it · [ ] bring back 50 ms at
+          the start/end · , . move the cut 50 ms · ⌘/Ctrl+Z undo · Shift+⌘/Ctrl+Z redo
+        </p>
+      </details>
 
       {shown.length > 0 ? (
         <table className="issue-table" onKeyDown={onKeyDown} aria-describedby="removed-keys">
@@ -260,7 +276,11 @@ export function RemovedPanel({ revision, onEdited, onError }: Props) {
                       Restore
                     </button>
                   ) : (
-                    <button type="button" onClick={() => apply(api.setRegionStatus([r.id], "removed"))}>
+                    <button
+                      type="button"
+                      className={r.status === "suggested" ? "primary" : ""}
+                      onClick={() => apply(api.setRegionStatus([r.id], "removed"))}
+                    >
                       {r.status === "suggested" ? "Apply" : "Remove again"}
                     </button>
                   )}
@@ -271,7 +291,11 @@ export function RemovedPanel({ revision, onEdited, onError }: Props) {
         </table>
       ) : (
         <p className="muted">
-          {listed.length ? "Nothing with this status." : "Nothing removed yet. Run the analysis to clean up."}
+          {listed.length
+            ? "Nothing with this status."
+            : scope
+              ? "Nothing cut or suggested in this chapter."
+              : "Nothing cut yet. Check the reading to find stutters and false starts."}
         </p>
       )}
 

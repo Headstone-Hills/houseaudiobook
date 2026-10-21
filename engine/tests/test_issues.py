@@ -22,6 +22,7 @@ from hillaudio.analysis.issues import (
     reconcile,
     silence_issues,
     text_issues,
+    unrecorded,
 )
 from hillaudio.text.extract_txt import extract_text
 from hillaudio.text.pages import PageSettings, build_page_map
@@ -113,6 +114,47 @@ def test_unread_lines() -> None:
     missing = sorted(i.unit_id or 0 for i in issues if i.kind == "missing_line")
     assert missing == [7, 8, 9, 10, 11, 12]  # chapter two was never read
     assert all(i.page_label == "3" for i in issues if i.kind == "missing_line")
+
+
+def test_a_chapter_not_recorded_yet_is_not_missing() -> None:
+    """Audio for chapter one only: chapter two isn't recorded yet, so none of its
+    lines are reported missing (they were all flagged before D-059)."""
+    rs = readings_for(["ch01_take1.wav"])
+    skip = unrecorded(SENTENCES, (r.sentence_ordinal for r in rs))
+    assert sorted(skip) == [7, 8, 9, 10, 11, 12]
+    issues = text_issues(SENTENCES, rs, SETTINGS, skip)
+    assert not [i for i in issues if i.kind == "missing_line"]
+    assert keyed(issues) == {("flub", 4), ("flub", 6)}  # chapter one is still checked
+
+
+def lines(chapters: list[int]) -> list[SentenceInfo]:
+    """Sentences numbered 0.., in chapters of the given sizes (chapter ids 100, 101, ...)."""
+    out: list[SentenceInfo] = []
+    for c, n in enumerate(chapters):
+        for _ in range(n):
+            k = len(out)
+            out.append(SentenceInfo(k, k, f"line {k}", "1", 1000 + c, 100 + c))
+    return out
+
+
+def test_long_unread_runs_at_a_chapter_edge_are_not_recorded() -> None:
+    book = lines([10])
+    # The narrator recorded the middle of the chapter: before and after isn't recorded.
+    assert sorted(unrecorded(book, [3, 4, 5, 6])) == [0, 1, 2, 7, 8, 9]
+    # A line or two unread at an edge is a skip (a forgotten title, a dropped last line).
+    assert sorted(unrecorded(book, [1, 2, 3, 4, 5, 6, 7, 8])) == []
+    assert sorted(unrecorded(book, range(2, 10))) == []
+
+
+def test_a_gap_between_read_lines_is_a_skip_however_long() -> None:
+    assert unrecorded(lines([10]), [0, 1, 8, 9]) == frozenset()
+
+
+def test_unrecorded_is_per_chapter() -> None:
+    book = lines([4, 4, 4])
+    # Chapter two not read at all; chapter three read from its first line to its end.
+    assert sorted(unrecorded(book, [0, 1, 2, 3, 8, 9, 10, 11])) == [4, 5, 6, 7]
+    assert unrecorded(book, []) == frozenset(range(12))
 
 
 def test_false_start_only_is_a_flub() -> None:

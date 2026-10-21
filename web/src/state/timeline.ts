@@ -37,6 +37,14 @@ export function fit(duration: number, width: number): Viewport {
   return { start: 0, pps, width };
 }
 
+/** Show [start, end] with a little room either side (a chapter, D-059). */
+export function fitRange(start: number, end: number, width: number): Viewport {
+  const pad = Math.max(0.5, (end - start) * 0.03);
+  const a = Math.max(0, start - pad);
+  const pps = Math.min(MAX_PPS, Math.max(MIN_PPS, width / Math.max(1, end + pad - a)));
+  return { start: a, pps, width };
+}
+
 /** "1:02:03.4" or "2:03.4". */
 export function timecode(t: number): string {
   const s = Math.max(0, t);

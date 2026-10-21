@@ -194,9 +194,42 @@ def best_take(readings: Sequence[ReadingInfo]) -> ReadingInfo | None:
     return min(full, key=lambda r: (len(_errors(r)), -r.score)) if full else None
 
 
+# A run of unread lines at the start or end of a chapter this long or longer is text
+# not recorded yet (the audio covers only part of the manuscript), not a skip.
+# Shorter runs at the edges, like a forgotten chapter title, are still flagged.
+MIN_UNRECORDED_RUN = 3
+
+
+def unrecorded(sentences: Sequence[SentenceInfo], read: Iterable[int]) -> frozenset[int]:
+    """Ordinals of the sentences the recordings don't cover yet, so they aren't
+    reported as missing: every line of a chapter nobody has read from, and the
+    long unread runs before the first and after the last line read in a chapter.
+    Gaps between lines that were read are skips, and stay flagged."""
+    done = set(read)
+    by_chapter: dict[int, list[int]] = {}
+    for s in sentences:
+        by_chapter.setdefault(s.chapter, []).append(s.ordinal)
+    out: set[int] = set()
+    for ords in by_chapter.values():
+        hits = [i for i, o in enumerate(ords) if o in done]
+        if not hits:
+            out.update(ords)
+            continue
+        head, tail = ords[: hits[0]], ords[hits[-1] + 1 :]
+        for run in (head, tail):
+            if len(run) >= MIN_UNRECORDED_RUN:
+                out.update(run)
+    return frozenset(out)
+
+
 def text_issues(
-    sentences: Sequence[SentenceInfo], readings: Iterable[ReadingInfo], settings: IssueSettings
+    sentences: Sequence[SentenceInfo],
+    readings: Iterable[ReadingInfo],
+    settings: IssueSettings,
+    not_recorded: frozenset[int] = frozenset(),
 ) -> list[IssueDraft]:
+    """Flubs and unread lines. Lines in `not_recorded` (see `unrecorded`) aren't
+    expected to have a reading, so they're never reported missing."""
     by_sentence: dict[int, list[ReadingInfo]] = {}
     for r in readings:
         by_sentence.setdefault(r.sentence_ordinal, []).append(r)
@@ -204,6 +237,8 @@ def text_issues(
     for i, s in enumerate(sentences):
         rs = by_sentence.get(s.ordinal, [])
         ctx = sentence_context(sentences, i)
+        if not rs and s.ordinal in not_recorded:
+            continue
         if not rs:
             out.append(
                 IssueDraft(

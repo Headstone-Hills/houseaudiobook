@@ -25,6 +25,7 @@ from hillaudio.analysis.issues import (
     reconcile,
     silence_issues,
     text_issues,
+    unrecorded,
 )
 from hillaudio.edl import store as edl_store
 from hillaudio.edl.model import kept_seconds, merged
@@ -121,6 +122,9 @@ def detect(
     s = settings(project)
     sents = sentence_infos(project)
     readings = reading_infos(project, compare_run) if compare_run is not None else []
+    # What the recordings cover, from every reading: a line cut later is a gap,
+    # but text no recording reaches yet isn't missing (it isn't recorded yet).
+    not_recorded = unrecorded(sents, (r.sentence_ordinal for r in readings))
     # Check the timeline as edited (SPEC §6.7): what was cut isn't heard.
     tl = edl_store.timeline(project)
     cut = {
@@ -139,7 +143,7 @@ def detect(
     ]
     drafts: list[IssueDraft] = []
     if {"flub", "missing_line"} & set(kinds):
-        drafts += [d for d in text_issues(sents, readings, s) if d.kind in kinds]
+        drafts += [d for d in text_issues(sents, readings, s, not_recorded) if d.kind in kinds]
     if "silence" in kinds:
         for src in project.sources():
             check_cancel()

@@ -2,10 +2,8 @@
 // export MP3 per chapter (measured from the written files), and the narrator
 // corrections guide as PDF, CSV and Markdown.
 import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
-
-const FIXTURES = resolve(import.meta.dirname, "../../engine/fixtures");
+import { checkedBook, step } from "./steps";
 
 test("finalize, export and the corrections guide", async ({ page }) => {
   test.setTimeout(120_000);
@@ -16,20 +14,12 @@ test("finalize, export and the corrections guide", async ({ page }) => {
 
   await page.request.post("/api/project/close");
   await page.goto("/");
-  await page.getByLabel("Name").fill("Export");
-  await page.getByLabel("Location").fill(projects);
-  await page.getByRole("button", { name: "Create project" }).click();
-  await page
-    .getByLabel(/import by path/)
-    .fill(["ch01_take1.wav", "ch01_take2.wav", "ch02_take1.wav"].map((n) => `${FIXTURES}/${n}`).join("\n"));
-  await page.getByRole("button", { name: "Import", exact: true }).click();
-  await expect(page.locator("table.sources tbody tr")).toHaveCount(3, { timeout: 20_000 });
-  await page.getByLabel("Or by path").fill(`${FIXTURES}/manuscript.txt`);
-  await page.getByRole("button", { name: "Preview", exact: true }).click();
-  await page.getByRole("button", { name: "Import manuscript" }).click();
-  await expect(page.getByText(/13 sentences/).first()).toBeVisible({ timeout: 20_000 });
-  await page.getByRole("button", { name: "Transcribe and compare" }).click();
-  await expect(page.locator("section.issues").getByText("3 open · 0 resolved · 0 dismissed")).toBeVisible({ timeout: 30_000 });
+  await checkedBook(page, "Export", projects);
+  await step(page, "Fix mistakes");
+  await expect(page.locator("section.issues").getByText("3 to review · 0 fixed · 0 OK as is")).toBeVisible({
+    timeout: 30_000,
+  });
+  await step(page, "Export");
 
   // Finalize: analyze against ACX.
   const fin = page.locator("section.finalize");

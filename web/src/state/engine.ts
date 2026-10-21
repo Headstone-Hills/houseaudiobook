@@ -168,6 +168,26 @@ export interface SentenceComparison {
   page_end_label: string;
   readings: SentenceReading[];
   best_score: number | null;
+  /** false: no recording reaches this text yet (D-059), so it isn't "not read". */
+  recorded?: boolean;
+}
+
+export type ChapterStatus = "not_compared" | "not_recorded" | "partial" | "recorded";
+
+/** A chapter workspace (D-059): what the recordings cover of it, and where it is. */
+export interface Chapter {
+  id: number; // the chapter heading's unit id; -1 for the pages before chapter one
+  number: number; // 0 for those opening pages
+  title: string;
+  page_label: string;
+  status: ChapterStatus;
+  sentences: number;
+  read: number;
+  not_recorded: number;
+  sentence_ids: number[];
+  spans: { source_id: number; start: number; end: number }[]; // seconds in each recording
+  timeline: { start: number; end: number } | null; // seconds on the timeline
+  open_issues: number;
 }
 
 export interface Comparison {
@@ -569,10 +589,14 @@ export const api = {
   finalize: () => request<FinalizeView>("GET", "/api/project/finalize"),
   saveFinalize: (s: Partial<FinalizeSettings>) => request<FinalizeView>("PUT", "/api/project/finalize", s),
   analyze: (split: SplitMode) => request<{ job_id: string }>("POST", "/api/project/finalize/analyze", { split }),
-  preflight: (format: ExportFormat, split: SplitMode) =>
-    request<Preflight>("GET", `/api/project/export/preflight?format=${format}&split=${split}`),
-  exportAudio: (format: ExportFormat, split: SplitMode, kbps: number | null) =>
-    request<{ job_id: string }>("POST", "/api/project/export", { format, split, kbps }),
+  preflight: (format: ExportFormat, split: SplitMode, chapter: number | null = null) =>
+    request<Preflight>(
+      "GET",
+      `/api/project/export/preflight?format=${format}&split=${split}${chapter === null ? "" : `&chapter=${chapter}`}`,
+    ),
+  exportAudio: (format: ExportFormat, split: SplitMode, kbps: number | null, chapter: number | null = null) =>
+    request<{ job_id: string }>("POST", "/api/project/export", { format, split, kbps, chapter }),
+  chapters: () => request<Chapter[]>("GET", "/api/project/chapters"),
   exports: () => request<ExportReport[]>("GET", "/api/project/exports"),
   guideRows: (q: string) => request<{ header: Record<string, unknown>; rows: GuideRow[] }>("GET", `/api/project/guide/rows?${q}`),
   lanes: (start: number, end: number) =>

@@ -3,6 +3,7 @@
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
+import { step } from "./steps";
 
 const FIXTURES = resolve(import.meta.dirname, "../../engine/fixtures");
 
@@ -20,6 +21,7 @@ test("import a PDF manuscript and map its pages", async ({ page }) => {
   await page.getByRole("button", { name: "Create project" }).click();
   await expect(page.getByRole("heading", { name: "Two Fables" })).toBeVisible();
 
+  await step(page, "Manuscript");
   await page.getByTestId("manuscript-picker").setInputFiles(`${FIXTURES}/manuscript.pdf`);
   await expect(page.getByText("the PDF's pages")).toBeVisible();
   const pages = page.getByRole("table", { name: "Where each page starts" });

@@ -122,7 +122,7 @@ describe("ExportPanel", () => {
     expect(screen.getByText(/Last levels check: passes/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Bitrate (kbps)"), { target: { value: "256" } });
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
-    await waitFor(() => expect(calls(fetch, "POST")).toContainEqual(["/api/project/export", { format: "mp3", split: "single", kbps: 256 }]));
+    await waitFor(() => expect(calls(fetch, "POST")).toContainEqual(["/api/project/export", { format: "mp3", split: "single", kbps: 256, chapter: null }]));
     rerender(<ExportPanel jobs={[job({ id: "e1", kind: "export", status: "done", result: REPORT })]} onError={() => undefined} />);
     const link = await screen.findByRole("link", { name: "Book.mp3" });
     expect(link).toHaveAttribute("href", "/api/project/exports/20261021-120000/Book.mp3");
@@ -151,7 +151,7 @@ describe("ExportPanel", () => {
     expect(screen.getByLabelText("Format")).toHaveValue("wav24");
     await waitFor(() => expect(screen.getByRole("button", { name: "Export" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
-    await waitFor(() => expect(calls(fetch, "POST")).toContainEqual(["/api/project/export", { format: "wav24", split: "single", kbps: null }]));
+    await waitFor(() => expect(calls(fetch, "POST")).toContainEqual(["/api/project/export", { format: "wav24", split: "single", kbps: null, chapter: null }]));
     // Choosing MP3 on purpose is respected, and still refused.
     fireEvent.change(screen.getByLabelText("Format"), { target: { value: "mp3" } });
     expect(await screen.findByRole("alert")).toHaveTextContent("re-encode lossy recordings");

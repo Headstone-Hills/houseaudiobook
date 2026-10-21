@@ -20,6 +20,7 @@ from hillaudio.analysis import cleanup as cl
 from hillaudio.analysis import compare as cmp
 from hillaudio.analysis import takes as tk
 from hillaudio.analysis.boundaries import Envelope, EnvelopeBuilder, speech_mask
+from hillaudio.analysis.issues import unrecorded
 from hillaudio.asr import cache as asr_cache
 from hillaudio.asr.base import Transcriber, TranscriptWord
 from hillaudio.edl import store as edl_store
@@ -402,6 +403,10 @@ def comparison(project: Project, run_id: int) -> dict[str, Any]:
                 "diffs": json.loads(r["diffs_json"]),
             }
         )
+    # Text no recording reaches yet is "not recorded", not "not read" (see unrecorded).
+    sents = issue_store.sentence_infos(project)
+    unit_ordinal = {u["id"]: u["ordinal"] for u in units}
+    not_recorded = unrecorded(sents, (unit_ordinal[uid] for uid in by_unit if uid in unit_ordinal))
     sentences_out = []
     for u in units:
         rs = by_unit.get(u["id"], [])
@@ -416,6 +421,7 @@ def comparison(project: Project, run_id: int) -> dict[str, Any]:
                 "page_end_label": u["page_end_label"],
                 "readings": rs,
                 "best_score": best["score"] if best else None,
+                "recorded": u["ordinal"] not in not_recorded,
             }
         )
     return {

@@ -14,6 +14,7 @@ import {
   type SplitMode,
 } from "../state/engine";
 import { plural } from "../state/format";
+import { chapterLabel, type Scope } from "../state/scope";
 
 const SPLITS: [SplitMode, string][] = [
   ["single", "One file"],
@@ -234,7 +235,8 @@ export function FinalizePanel({ jobs, onError }: Common) {
 // -- Export ------------------------------------------------------------------------------------
 
 /** Export (SPEC §6.9): pre-flight first, then the files, with a report on each. */
-export function ExportPanel({ jobs, onError }: Common) {
+/** `chapter`: a chapter workspace exports just that chapter (D-059). */
+export function ExportPanel({ jobs, chapter = null, onError }: Common & { chapter?: Scope }) {
   const [chosen, setChosen] = useState<ExportFormat | null>(null);
   const [split, setSplit] = useState<SplitMode>("single");
   const [kbps, setKbps] = useState(192);
@@ -247,12 +249,13 @@ export function ExportPanel({ jobs, onError }: Common) {
   const lossy = pf?.lossy_sources ?? [];
   const format: ExportFormat = chosen ?? (lossy.length > 0 ? "wav24" : "mp3");
 
+  const chapterId = chapter?.id ?? null;
   useEffect(() => {
     api
-      .preflight(format, split)
+      .preflight(format, split, chapterId)
       .then(setPf)
       .catch(() => undefined);
-  }, [format, split, job?.status]);
+  }, [format, split, chapterId, job?.status]);
   useEffect(() => {
     api
       .exports()
@@ -290,16 +293,20 @@ export function ExportPanel({ jobs, onError }: Common) {
             </select>
           </label>
         )}
-        <label>
-          Files
-          <select value={split} onChange={(e) => setSplit(e.target.value as SplitMode)}>
-            {SPLITS.map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </label>
+        {chapter ? (
+          <span className="muted">One file: {chapterLabel(chapter)}</span>
+        ) : (
+          <label>
+            Files
+            <select value={split} onChange={(e) => setSplit(e.target.value as SplitMode)}>
+              {SPLITS.map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
       {pf && (
         <div className="preflight" aria-label="Pre-flight summary">
@@ -340,15 +347,16 @@ export function ExportPanel({ jobs, onError }: Common) {
       <div className="run-row">
         <button
           type="button"
+          className="primary"
           disabled={busy || !pf || pf.problems.length > 0}
           onClick={() =>
             api
-              .exportAudio(format, split, format === "mp3" ? kbps : null)
+              .exportAudio(format, split, format === "mp3" ? kbps : null, chapterId)
               .then((r) => setJobId(r.job_id))
               .catch((e: unknown) => onError(message(e)))
           }
         >
-          Export
+          {chapter ? "Export this chapter" : "Export"}
         </button>
         {job && job.status !== "done" && (
           <span role="status">
@@ -372,27 +380,33 @@ export function ExportPanel({ jobs, onError }: Common) {
 // -- Guide -------------------------------------------------------------------------------------
 
 /** The narrator corrections guide (SPEC §6.9): preview, then CSV / Markdown / PDF. */
-export function GuidePanel({ revision }: { revision: number }) {
+export function GuidePanel({ revision, chapter = null }: { revision: number; chapter?: Scope }) {
   const [reference, setReference] = useState<"original" | "master">("original");
   const [sort, setSort] = useState<"page" | "time">("page");
   const [narrator, setNarrator] = useState("");
   const [silences, setSilences] = useState(false);
   const [resolved, setResolved] = useState(false);
   const [rows, setRows] = useState<GuideRow[]>([]);
-  const q = new URLSearchParams({
-    reference,
-    sort,
-    include_silences: String(silences),
-    include_resolved: String(resolved),
-  });
+  const chapterId = chapter?.id ?? null;
+  const query = (): URLSearchParams => {
+    const params = new URLSearchParams({
+      reference,
+      sort,
+      include_silences: String(silences),
+      include_resolved: String(resolved),
+    });
+    if (chapterId !== null) params.set("chapter", String(chapterId));
+    return params;
+  };
+  const q = query();
+  const qs = q.toString();
 
   useEffect(() => {
-    const params = new URLSearchParams({ reference, sort, include_silences: String(silences), include_resolved: String(resolved) });
     api
-      .guideRows(params.toString())
+      .guideRows(qs)
       .then((r) => setRows(r.rows))
       .catch(() => undefined);
-  }, [reference, sort, silences, resolved, revision]);
+  }, [qs, revision]);
 
   const file = (format: string) => `/api/project/guide?${q.toString()}&format=${format}&narrator=${encodeURIComponent(narrator)}`;
 

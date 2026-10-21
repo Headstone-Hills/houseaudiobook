@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { api, excerptUrl, type Source, type Take, type TakesResponse } from "../state/engine";
 import { TEXT_ERRORS, clock, describe } from "../state/comparison";
 import { plural } from "../state/format";
+import { hasItem, type Scope } from "../state/scope";
 
 const STATUS_LABELS = { preferred: "Preferred", alternate: "Alternate", rejected: "Rejected" } as const;
 
 interface Props {
   sources: Source[];
   revision: number; // analysis finished, or an edit elsewhere (undo) changed things
+  scope?: Scope; // a chapter: only its lines (D-059)
   onEdited: () => void;
   onError: (msg: string) => void;
 }
@@ -15,7 +17,7 @@ interface Props {
 /** Take comparison (SPEC §6.5): one group per line read more than once. Keyboard
  * first: 1-9 choose, Space play, ←/→ switch take (A/B, in sync), L loop,
  * N / Shift+N next/previous line, C confirm, X reject, B back. */
-export function TakesPanel({ sources, revision, onEdited, onError }: Props) {
+export function TakesPanel({ sources, revision, scope = null, onEdited, onError }: Props) {
   const [data, setData] = useState<TakesResponse | null>(null);
   const [groupIdx, setGroupIdx] = useState(0);
   const [cursor, setCursor] = useState(0); // the take being auditioned, by index
@@ -35,7 +37,17 @@ export function TakesPanel({ sources, revision, onEdited, onError }: Props) {
     };
   }, [revision]);
 
-  const groups = data?.groups ?? [];
+  const groups = useMemo(
+    () =>
+      (data?.groups ?? []).filter((g) =>
+        hasItem(scope, {
+          unitId: g.manuscript_unit_id,
+          sourceId: g.takes[0]?.source_file_id ?? null,
+          start: g.takes[0]?.start ?? null,
+        }),
+      ),
+    [data, scope],
+  );
   const group = groups[Math.min(groupIdx, groups.length - 1)];
   // Takes in the order they were recorded: "take 1" is the first reading.
   const takes = group ? [...group.takes].sort(byRecording) : [];
@@ -144,7 +156,9 @@ export function TakesPanel({ sources, revision, onEdited, onError }: Props) {
       <p aria-live="polite">
         {groups.length
           ? `${plural(groups.length, "line")} read more than once · ${review} to review · ${confirmed} confirmed`
-          : "No line was read more than once."}
+          : scope
+            ? "No line in this chapter was read more than once."
+            : "No line was read more than once."}
       </p>
       {group && (
         <div
@@ -155,10 +169,13 @@ export function TakesPanel({ sources, revision, onEdited, onError }: Props) {
           aria-describedby="takes-keys"
           onKeyDown={onKeyDown}
         >
-          <p className="muted" id="takes-keys">
-            Keys: 1–9 choose · Space play · ←/→ switch take (keeps your place) · L loop{loop ? " (on)" : ""} · N /
-            Shift+N next/previous line · C confirm · X reject · B back to the previous choice
-          </p>
+          <details className="keys">
+            <summary>Keyboard shortcuts</summary>
+            <p className="muted" id="takes-keys">
+              1–9 choose · Space play · ←/→ switch take (keeps your place) · L loop{loop ? " (on)" : ""} · N / Shift+N
+              next/previous line · C confirm · X reject · B back to the previous choice
+            </p>
+          </details>
           <div className="run-row">
             <button type="button" onClick={() => moveGroup(-1)} disabled={groupIdx === 0}>
               Previous line

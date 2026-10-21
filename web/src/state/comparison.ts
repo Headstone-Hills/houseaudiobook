@@ -5,7 +5,7 @@ import type { DiffKind, ReadingDiff, SentenceComparison, SentenceReading } from 
 /** Differences that mean the text was read wrongly (not stutters or suspicions). */
 export const TEXT_ERRORS: ReadonlySet<DiffKind> = new Set(["missing", "substitution", "transposition", "reordered"]);
 
-export type Status = "clean" | "differences" | "not-read";
+export type Status = "clean" | "differences" | "not-read" | "not-recorded";
 
 /** A complete reading (not a false start). */
 export function complete(r: SentenceReading): boolean {
@@ -22,9 +22,10 @@ export function bestReading(s: SentenceComparison): SentenceReading | null {
 }
 
 /** clean: some complete take has no text errors; differences: every take has some
- * (or only partial takes exist); not-read: no reading at all. */
+ * (or only partial takes exist); not-read: no reading, where the recordings should
+ * have one (a skip); not-recorded: text no recording reaches yet (D-059). */
 export function status(s: SentenceComparison): Status {
-  if (!s.readings.length) return "not-read";
+  if (!s.readings.length) return s.recorded === false ? "not-recorded" : "not-read";
   const best = bestReading(s);
   return best && complete(best) && !best.diffs.some((d) => TEXT_ERRORS.has(d.kind)) ? "clean" : "differences";
 }

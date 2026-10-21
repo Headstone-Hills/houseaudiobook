@@ -2,10 +2,8 @@
 // suggested and applied (a pickup moves into place), and choosing another take
 // from the keyboard updates the EDL, one click (or B) away from going back.
 import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
-
-const FIXTURES = resolve(import.meta.dirname, "../../engine/fixtures");
+import { checkedBook, step } from "./steps";
 
 type Clip = { source_id: number; source_in: number };
 
@@ -17,19 +15,8 @@ test("compare takes and choose from the keyboard", async ({ page }) => {
 
   await page.request.post("/api/project/close");
   await page.goto("/");
-  await page.getByLabel("Name").fill("Takes");
-  await page.getByLabel("Location").fill(projects);
-  await page.getByRole("button", { name: "Create project" }).click();
-  await page
-    .getByLabel(/import by path/)
-    .fill(["ch01_take1.wav", "ch01_take2.wav", "ch02_take1.wav"].map((n) => `${FIXTURES}/${n}`).join("\n"));
-  await page.getByRole("button", { name: "Import", exact: true }).click();
-  await expect(page.locator("table.sources tbody tr")).toHaveCount(3, { timeout: 20_000 });
-  await page.getByLabel("Or by path").fill(`${FIXTURES}/manuscript.txt`);
-  await page.getByRole("button", { name: "Preview", exact: true }).click();
-  await page.getByRole("button", { name: "Import manuscript" }).click();
-  await expect(page.getByText(/13 sentences/).first()).toBeVisible({ timeout: 20_000 });
-  await page.getByRole("button", { name: "Transcribe and compare" }).click();
+  await checkedBook(page, "Takes", projects);
+  await step(page, "Choose takes");
 
   const panel = page.locator("section.takes-panel");
   await expect(panel.getByText("2 lines read more than once · 1 to review · 0 confirmed")).toBeVisible({
