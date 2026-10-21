@@ -27,13 +27,13 @@ class AnalysisRequest(BaseModel):
 def asr_info() -> dict[str, Any]:
     from hillaudio.asr import models
 
-    have = {m.name: models.local_dir(m) is not None for m in models.CATALOG.values()}
+    # Only models we can verify (D-055), with their measured download sizes.
     return {
         "installed": whisper.installed(),
         "models": [
-            {"name": m, "size_mb": mb, "downloaded": have.get(m, False)}
-            for m, mb in MODEL_SIZES_MB.items()
-            if m in have  # only models we can verify (D-055)
+            {"name": m.name, "size_mb": m.size_mb, "downloaded": models.local_dir(m) is not None}
+            for name in MODEL_SIZES_MB
+            if (m := models.CATALOG.get(name)) is not None
         ],
         "default": AsrSettings().to_json(),
     }

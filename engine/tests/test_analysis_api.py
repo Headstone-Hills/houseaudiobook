@@ -161,7 +161,7 @@ def test_bad_requests(client: TestClient) -> None:
     assert client.get("/api/project/sources/99/transcript").status_code == 404
     info = client.get("/api/asr").json()
     assert info["default"]["model"] == "small.en"
-    assert {"name": "small.en", "size_mb": 464} in info["models"]
+    assert {"name": "small.en", "size_mb": 486, "downloaded": False} in info["models"]
 
 
 def test_stages_follow_the_project_functions(client: TestClient, tmp_path: Path) -> None:
