@@ -8,6 +8,8 @@ Downloads ~460 MB on first use. Run with:
 M3 acceptance: the report on fixtures matches the injected errors (D-028 targets:
 every read sentence found, the injected misread and skip flagged, no false flags).
 M4 acceptance: the Issues list is exactly the skip and the two long pauses.
+M5 acceptance: cleanup removes exactly the stutters, false start and commentary,
+and no line that must stay.
 """
 
 from __future__ import annotations
@@ -103,3 +105,20 @@ def test_small_en_finds_exactly_the_injected_errors(client: TestClient, tmp_path
         ("silence", "medium", "ch01_take1", "1"),
         ("silence", "medium", "ch02_take1", "3"),
     ]
+
+    # M5: what cleanup removed, against the ground truth.
+    from fakeasr import TRUTH
+
+    regions = client.get("/api/project/edl").json()["regions"]
+    print("real cleanup:", [(r["source_label"], r["kind"], r["start"], r["end"]) for r in regions])
+    truth = sorted(
+        (f["name"][:-4], e["type"], e["start"], e["end"])
+        for f in TRUTH["files"]
+        for e in f["events"]
+        if e["type"] in ("stutter", "false_start", "commentary")
+    )
+    got = sorted((r["source_label"], r["kind"], r["start"], r["end"]) for r in regions)
+    assert [(g[0], g[1]) for g in got] == [(w[0], w[1]) for w in truth]
+    assert all(r["status"] == "removed" for r in regions)
+    for g, w in zip(got, truth, strict=True):
+        assert abs(g[2] - w[2]) < 0.1 and abs(g[3] - w[3]) < 0.1, (g, w)

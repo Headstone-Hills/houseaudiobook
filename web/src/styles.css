@@ -100,3 +100,11 @@ button.link { background: none; border: none; padding: 0; color: inherit; text-d
 .change-new, .change-regressed { color: var(--err-fg); }
 .issue-settings form { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: end; }
 .issue-settings input { width: 5rem; }
+
+/* Removed material (M5) */
+.removed .run-row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0; }
+.removed td.actions { white-space: nowrap; }
+.removed td.actions button { margin-right: 0.25rem; }
+.issue-table tr.st-restored { opacity: 0.7; }
+.issue-table tr.st-suggested td:first-child { font-style: italic; }
+.history .hist-undone, .history .hist-dropped { color: var(--muted, #777); text-decoration: line-through; }

@@ -29,12 +29,13 @@ interface Props {
   checks: string[];
   canRun: boolean;
   revision: number; // bumped when an analysis or manuscript job finishes
+  onEdited?: () => void; // an action here changed the timeline (shorten a pause)
   onError: (msg: string) => void;
 }
 
 /** The action list (SPEC §6.4): every flagged flub, unread line and long pause,
  * with keyboard shortcuts for review. Decisions survive re-runs (§6.7). */
-export function IssuesPanel({ checks, canRun, revision, onError }: Props) {
+export function IssuesPanel({ checks, canRun, revision, onEdited, onError }: Props) {
   const [data, setData] = useState<IssueList | null>(null);
   const [filter, setFilter] = useState<IssueFilter>({ kind: "all", status: "open", severity: "all" });
   const [sort, setSort] = useState<SortKey>("page");
@@ -103,6 +104,18 @@ export function IssuesPanel({ checks, canRun, revision, onError }: Props) {
     el.play()?.catch(() => undefined); // jsdom and autoplay policies may refuse; the controls remain
   };
 
+  const [shortened, setShortened] = useState<Set<number>>(new Set());
+  const shorten = (i: Issue) => {
+    if (i.kind !== "silence") return;
+    api
+      .shortenPause(i.id)
+      .then(() => {
+        setShortened((s) => new Set(s).add(i.id));
+        onEdited?.();
+      })
+      .catch(fail);
+  };
+
   const startNote = (i: Issue) => setEditing({ id: i.id, draft: i.note });
   const saveNote = () => {
     if (!editing) return;
@@ -142,6 +155,9 @@ export function IssuesPanel({ checks, canRun, revision, onError }: Props) {
           return true;
         case "x":
           if (current) toggle(current.id);
+          return true;
+        case "s":
+          if (current) shorten(current);
           return true;
         default:
           return false;
@@ -237,7 +253,7 @@ export function IssuesPanel({ checks, canRun, revision, onError }: Props) {
         <audio ref={audio} controls aria-label="Issue audio" onEnded={() => setPlaying(null)} />
       </div>
       <p className="muted" id="issue-keys">
-        Keys: ↑/↓ or j/k move · Space play (±3 s) · r resolve · d dismiss · o reopen · n note · x select
+        Keys: ↑/↓ or j/k move · Space play (±3 s) · r resolve · d dismiss · o reopen · n note · x select · s shorten a pause
       </p>
 
       {data && (
@@ -311,6 +327,14 @@ export function IssuesPanel({ checks, canRun, revision, onError }: Props) {
                     {i.kind === "flub" && <div className="heard">Heard: {i.heard || "—"}</div>}
                     {i.kind === "silence" && i.sentence_text && <div className="muted">After: {i.sentence_text}</div>}
                     <div className="muted">{summary(i)}</div>
+                    {i.kind === "silence" &&
+                      (shortened.has(i.id) ? (
+                        <div role="status">Shortened to {i.detail.suggested_s ?? 0.6} s. Re-run checks to update.</div>
+                      ) : (
+                        <button type="button" onClick={() => shorten(i)}>
+                          Shorten to {i.detail.suggested_s ?? 0.6} s
+                        </button>
+                      ))}
                   </td>
                   <td>
                     {i.status === "open" ? "Open" : i.status === "resolved" ? "Resolved" : "Dismissed"}

@@ -4,6 +4,7 @@ import { JobsPanel } from "../components/JobsPanel";
 import { ComparisonPanel } from "../components/ComparisonPanel";
 import { IssuesPanel } from "../components/IssuesPanel";
 import { ManuscriptPanel } from "../components/ManuscriptPanel";
+import { RemovedPanel } from "../components/RemovedPanel";
 import { SourceTable } from "../components/SourceTable";
 import { Waveform } from "../components/Waveform";
 import type { Job, PageSettings, PeakSettings, ProjectSummary } from "../state/engine";
@@ -20,6 +21,8 @@ interface Props {
 export function ProjectPage({ project, jobs, peakSettings, pageDefaults, onChanged, onClose }: Props) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
+  const [edlRevision, setEdlRevision] = useState(0);
+  const edited = () => setEdlRevision((n) => n + 1);
   const addError = (msg: string) => setErrors((e) => [...e, msg]);
 
   // Per-file failures inside a finished import job are shown alongside other errors.
@@ -97,11 +100,14 @@ export function ProjectPage({ project, jobs, peakSettings, pageDefaults, onChang
       />
 
       <IssuesPanel
-        checks={project.functions.filter((f) => f === "flubs" || f === "silences")}
+        checks={project.functions.filter((f) => f === "cleanup" || f === "flubs" || f === "silences")}
         canRun={project.sources.length > 0}
         revision={analysisRevision + manuscriptRevision}
+        onEdited={edited}
         onError={addError}
       />
+
+      <RemovedPanel revision={analysisRevision + manuscriptRevision + edlRevision} onEdited={edited} onError={addError} />
     </main>
   );
 }

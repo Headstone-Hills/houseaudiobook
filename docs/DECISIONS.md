@@ -409,3 +409,79 @@ global alignment:
 - The browser plays it in one `<audio>` element with visible controls. A
   waveform playhead arrives with the timeline (M7).
 
+## D-038 · The narration EDL as removed regions (M5)
+- In M5 every edit is a removal: cleanup, pause shortening and the user's cuts.
+  So the narration track is stored as *removed regions*: integer sample ranges
+  per source, at the source's rate. Clips and timeline positions are derived:
+  the sources in order, minus the active regions.
+- Why:
+  - Every edit ripples by construction.
+  - An edit is one small row, so undo entries stay small even for a 10 h book.
+  - Restoring material (SPEC §5) is changing a region's status or edges.
+- Edits on this model:
+  - A trim on a clip edge moves a region edge; dragging outward re-exposes
+    removed audio.
+  - A rolling edit shifts a region, so the length is unchanged.
+- Timeline positions are integers at the highest source rate. They are computed
+  from exact cumulative time (fractions), so there is no drift across clips.
+- **Planned migration (M7):** moves, gain, fades and other tracks need
+  explicit `edl_clip` rows (SPEC §4). The narration track will be
+  materialized from the regions then, and its regions keep their history.
+
+## D-039 · Undo/redo (M5)
+- Each edit is one `operation_log` entry: op type, origin `auto`/`user`, and
+  the affected `edit_region` rows before and after. Undo writes "before" and
+  sets `reverted_at`; redo writes "after" and clears it.
+- Undo stack: edit entries not reverted. Redo stack: reverted entries newer
+  than the latest entry still in effect. So a new edit after an undo drops the
+  redo stack without deleting the history (shown as "undone").
+- Region ids are never reused, so a redo can always write its row back.
+- A whole cleanup run is one undo step. Edits are refused (409) while an
+  analysis job runs, so entries never interleave.
+
+## D-040 · Cleanup detection (M5)
+- **Stutter:** an extra word block the alignment tagged `repeat`. Cut from its
+  onset to the next word's onset; confidence 0.9.
+- **False start:** a fragment reading (coverage ≤ 0.6) whose very next reading,
+  within 6 s, is the same sentence. Cut from the fragment's onset to the
+  restart's onset; confidence 0.9 (0.75 if the restart is partial too).
+  Longer partial readings are takes (M6) and are never cut here.
+- **Commentary:** unaligned speech that is set off from the previous line by a
+  pause (≥ 0.2 s). Cut from its onset to the next reading's onset.
+  - Confidence 0.9 with a keyword hint ("hold on", "let me", "sorry", "again",
+    "from the top"...).
+  - Otherwise 0.6 for ≤ 6 words, else 0.4: a long passage may be text the
+    manuscript lacks.
+- Candidates never overlap; of two overlapping, the more confident is kept.
+- **Without a manuscript:** immediate repeats of 1-3 words in the transcript
+  alone, at confidence 0.75.
+- Candidates at or above `auto_apply` (0.7) are applied as `removed`, the rest
+  `suggested`. Stable keys come from kind, source hash and text context.
+  - Re-running keeps every existing region's status (a restore stays restored).
+  - It refreshes bounds only of regions nobody touched.
+  - It never silently restores a region that isn't found again.
+- The pause before unwanted speech is kept and the pause after it removed, so
+  the join sounds like one natural pause.
+
+## D-041 · Render and previews (M5)
+- `edl/render.py` reads sources with ffmpeg.
+  - It seeks to a whole second before the start (exact at any rate) and drops
+    frames to the exact sample. No `-ss` for reads from 0: for MP3 that changes
+    the encoder-delay skip.
+  - Tests check reads against a full decode for WAV and MP3.
+- A cut inside one recording is crossfaded over 10 ms using the audio on both
+  sides (the clip handles). Recordings are joined without a blend.
+  Resampled sources (mixed rates) are joined without a blend for now.
+  With no edits there are no joins, hence the sample-identical round trip.
+- Previews: `GET /api/project/edl/render?start&end` (timeline seconds, ≤ 60 s)
+  as 16-bit WAV. Exports (M8) will render from the same code at full quality.
+
+## D-042 · Checks on the edited timeline (M5)
+- Flub checks ignore readings with less than half their span left on the
+  timeline.
+- Pauses are measured with cut audio left out. Issue positions stay in the
+  recording, so keys and jump-to-audio are unchanged.
+- "Shorten pause" cuts the pause's middle to leave `keep` seconds (default: the
+  boundary's natural pause, 0.6/1.2/2.0 s). It is one region per issue, so
+  shortening again adjusts the same cut.
+

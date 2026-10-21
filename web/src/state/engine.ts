@@ -229,6 +229,55 @@ export interface IssueSettings {
   low_confidence: number;
 }
 
+export type RegionKind = "stutter" | "false_start" | "commentary" | "pause" | "cut";
+export type RegionStatus = "removed" | "restored" | "suggested";
+
+/** Material taken out of the timeline (a removed region of one recording). */
+export interface Region {
+  id: number;
+  source_file_id: number;
+  source_label: string;
+  kind: RegionKind;
+  status: RegionStatus;
+  origin: "auto" | "user";
+  decided_by: "auto" | "user";
+  confidence: number | null;
+  reason: string;
+  text: string;
+  start: number; // seconds in the recording
+  end: number;
+  seconds: number;
+  /** Timeline seconds where it sits (or would sit if restored). */
+  timeline_at: number | null;
+  issue_id: number | null;
+}
+
+export interface Edl {
+  rate: number;
+  duration: number;
+  original_duration: number;
+  clips: { source_id: number; source_in: number; source_out: number; timeline_start: number; timeline_end: number }[];
+  regions: Region[];
+  undo: string | null;
+  redo: string | null;
+}
+
+export interface HistoryEntry {
+  seq: number;
+  op_type: string;
+  origin: "auto" | "user";
+  summary: string;
+  created_at: string;
+  state: "done" | "undone" | "dropped";
+}
+
+export interface CleanupSettings {
+  auto_apply: number;
+  stutters: boolean;
+  false_starts: boolean;
+  commentary: boolean;
+}
+
 /** Where a manuscript comes from: a local path, an upload, or the project's copy. */
 export type ManuscriptSource = { path: string } | { upload_id: string } | { current: true };
 
@@ -310,6 +359,21 @@ export const api = {
     request<{ job_id: string }>("POST", "/api/project/analysis", { stages, asr: model ? { model } : {} }),
   comparison: () => request<Comparison | null>("GET", "/api/project/comparison"),
   issues: () => request<IssueList>("GET", "/api/project/issues"),
+  edl: () => request<Edl>("GET", "/api/project/edl"),
+  setRegionStatus: (ids: number[], status: "removed" | "restored") =>
+    request<Edl>("POST", "/api/project/edl/regions/status", { ids, status }),
+  editRegion: (id: number, bounds: { start?: number; end?: number }) =>
+    request<Edl>("PATCH", `/api/project/edl/regions/${id}`, bounds),
+  rollRegion: (id: number, delta: number) => request<Edl>("POST", `/api/project/edl/regions/${id}/roll`, { delta }),
+  undo: () => request<Edl>("POST", "/api/project/edl/undo"),
+  redo: () => request<Edl>("POST", "/api/project/edl/redo"),
+  history: () =>
+    request<{ entries: HistoryEntry[]; undo: string | null; redo: string | null }>("GET", "/api/project/edl/history"),
+  shortenPause: (issueId: number, keep?: number) =>
+    request<Edl>("POST", `/api/project/issues/${issueId}/shorten`, keep === undefined ? {} : { keep }),
+  cleanupSettings: () => request<CleanupSettings>("GET", "/api/project/cleanup-settings"),
+  saveCleanupSettings: (s: Partial<CleanupSettings>) =>
+    request<CleanupSettings>("PUT", "/api/project/cleanup-settings", s),
   decideIssues: (ids: number[], change: { status?: IssueStatus; note?: string }) =>
     request<{ issues: Issue[] }>("PATCH", "/api/project/issues", { ids, ...change }),
   issueSettings: () => request<IssueSettings>("GET", "/api/project/issue-settings"),
@@ -327,6 +391,11 @@ export const api = {
 /** The audio around [start, end] (the engine adds ±3 s of context), as WAV. */
 export function excerptUrl(sourceId: number, start: number, end: number): string {
   return `/api/project/sources/${sourceId}/excerpt?start=${start.toFixed(3)}&end=${end.toFixed(3)}`;
+}
+
+/** The edited timeline [start, end) seconds, rendered from the sources, as WAV. */
+export function renderUrl(start: number, end: number): string {
+  return `/api/project/edl/render?start=${Math.max(0, start).toFixed(3)}&end=${end.toFixed(3)}`;
 }
 
 export async function fetchAllPeaks(sourceId: number, level: number): Promise<PeaksResponse> {

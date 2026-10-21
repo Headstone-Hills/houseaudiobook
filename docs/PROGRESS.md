@@ -159,35 +159,45 @@ Risks:
 - Stable keys depend on sentence text. Editing a sentence's wording in the manuscript makes its issues new (old decisions stay on the old keys, unmatched).
 - Fixtures are synthetic (one voice, 13 sentences). Re-check on a real narration before M8.
 
-## M5 · Cleanup + EDL: in progress
+## M5 · Cleanup + EDL: done (2026-10-21)
 
-Plan:
-1. **`analysis/cleanup.py`** (pure): cut candidates with a reason, confidence and stable key.
-   - **Stutters:** extra words tagged `repeat` by the alignment. Cut from the repeat's onset to the next word's onset.
-   - **False starts:** a partial reading followed soon after by a reading of the same sentence. Cut from the partial's onset to the restart's onset.
-   - **Commentary:** unaligned speech. Cut from its onset to the next reading's onset. Keyword hints ("sorry", "let me", "again", "hold on"...) raise confidence; long hint-free passages stay *suggested*, since they may be text missing from the manuscript.
-   - Without a manuscript: immediate word repeats from the transcript alone.
-   - Edges snap to speech onsets (the energy mask). Confidence ≥ threshold (0.7, configurable) is applied; lower is *suggested*.
-2. **EDL model** (`edl/`, pure). The narration track is the sources in order, minus *removed regions*: sample-accurate integer ranges per source, each with a kind, reason, origin, status and stable key. Clips and timeline positions are derived from them, so every edit ripples by construction.
-   - Rolling/ripple edits on a clip edge move a region's edges. Dragging an edge outward re-exposes removed audio.
-3. **Store and undo.** Schema v5 `edit_region`. Every edit is one operation-log entry with before/after rows, origin `auto` or `user`.
-   - Undo/redo is unlimited and persisted (`reverted_at`); a new edit after undo clears the redo stack.
-   - Re-running cleanup keeps user decisions (stable keys).
-4. **Pipeline and checks.** A `cleanup` stage (before the checks).
-   - Checks see the current timeline: readings that were cut are ignored, and pauses are measured with cut audio removed.
-   - "Shorten pause" on a long-pause issue cuts its middle down to N s. The next check auto-resolves it.
-5. **Render.** A sample-exact render of the timeline (or a range), decoded from the original sources, used for previews and the round-trip test.
-6. **API and UI.**
-   - Removed Material panel: kind, text, time, confidence, status; restore, re-apply, play the cut, play the join; keyboard shortcuts.
-   - Undo/redo (Ctrl/⌘+Z, Shift+Ctrl/⌘+Z) and a history list.
-   - Shorten from the Issues panel.
-7. **Tests.**
-   - Precision/recall for stutter, false-start and commentary cuts on the fixtures (perfect and noisy fake ASR, plus real small.en).
-   - Round trip: auto-edit, then undo all, renders sample-identical to the sources.
-   - Rolling-edit restore; undo/redo across reopening; immutability; API, UI and e2e.
-- **Risks.**
-  - The region model fits one narration track. M7 multitrack moves/gain/fades will need explicit clips (planned migration).
-  - Cutting at speech onsets without crossfades may click on real recordings; render adds short fades at joins only.
+Acceptance criteria (SPEC §9):
+- [x] **Stutter, false-start and commentary removal as EDL operations** (D-040).
+  - Fixtures with perfect fake ASR: precision/recall 1.0 for each kind.
+  - Noisy fake ASR (5-10%, 10 seeds): no line that must stay is ever cut. Recall is 1.0 for false starts and commentary and 0.8 for stutters: a stutter is missed when the word after it is misheard.
+  - **Real small.en** (`test_real_model.py`): exactly the 4 injected cuts, each within 10 ms of the ground truth, all auto-applied.
+  - Low-confidence candidates are *suggested*, not applied. The threshold is configurable.
+- [x] **Removed Material panel.**
+  - Lists kind, where, what was cut, length, confidence and status.
+  - Play the join as edited (rendered from the sources) or play what was cut.
+  - Restore, re-apply and apply suggestions.
+  - Keyboard for every action: j/k, Space, p, r, a, `[` `]` trim 50 ms, `,` `.` roll 50 ms.
+- [x] **Undo/redo.** Unlimited and persisted in the project (D-039), via ⌘/Ctrl+Z and Shift+⌘/Ctrl+Z or the buttons, with an edit history. A new edit after an undo drops the redo stack.
+- [x] **Rolling-edit restore verified by test.**
+  - Dragging the clip edge outward re-exposes the cut audio, sample-identical to the source.
+  - A rolling edit moves the cut without changing the timeline's length.
+- [x] **Round trip** (SPEC §11): auto-edit, then undo all, renders sample-identical to the sources; redo renders the edit again exactly.
+- [x] The checks now see the edited timeline (SPEC §6.7). "Shorten pause" on a long-pause issue cuts its middle, and the next check auto-resolves it; undoing it makes the issue regress.
+- [x] Immutability test covers cleanup, edits, undo/redo and renders.
+
+`make check`: 235 engine tests (1 opt-in skipped), 35 web tests. `make e2e`: 5 tests.
+
+Bugs found and fixed, with regression tests:
+- **Noise made a second complete take look like a false start.** A misheard final word lowered its coverage, and the whole take was cut. False starts are now fragments only (coverage ≤ 0.6).
+- **The misheard end of a line was cut as commentary.** It came out of alignment as "unaligned". Commentary must now be set off from the line before by a pause.
+- **MP3 reads from the start:** `-ss 0` changed how ffmpeg skips the encoder delay, so reads from 0 no longer pass it.
+
+Deferred:
+- Clip moves, gain, fades and multiple tracks (M7; D-038 notes the planned migration).
+- Choosing takes (M6). Takes that are near-complete readings are never cut by cleanup.
+- A waveform view of the edited timeline and dragging edges with the mouse (M7). Trims and rolls work from the keyboard now.
+- Issues marked as hidden by cuts: a re-run is needed to update the list; the UI says so.
+
+Risks:
+- The region model fits one narration track; M7 needs explicit clips (D-038).
+- Joins are 10 ms crossfades at speech onsets. They are click-free on the fixtures, but real room tone may make the joins audible; adjustable later.
+- Commentary confidence relies on English keyword hints. Long hint-free passages are only suggested (they may be text missing from the manuscript).
+- Undo of a whole cleanup run is one step. Undoing it also undoes every cut it made; individual restores are separate steps.
 
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.

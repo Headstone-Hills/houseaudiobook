@@ -41,7 +41,7 @@ test("compare narration to the manuscript", async ({ page }) => {
   const sentences = page.getByRole("list", { name: "Sentences" });
   await expect(sentences.getByRole("listitem").first()).toContainText("I thought those grapes were ripe");
   await expect(page.getByText("Missing: “now”").first()).toBeVisible();
-  await expect(page.getByText(/Hold on, let me get some water/)).toBeVisible();
+  await expect(page.locator("section.comparison").getByText(/Hold on, let me get some water/)).toBeVisible();
 
   // The misread line has a clean pickup in take 2, so it counts as clean; its takes show both.
   await page.getByLabel("All sentences").check();

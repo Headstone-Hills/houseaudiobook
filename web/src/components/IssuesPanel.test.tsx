@@ -87,6 +87,7 @@ function setup(list: IssueList = LIST) {
     "GET /api/project/issue-settings": SETTINGS,
     "PUT /api/project/issue-settings": (b: unknown) => ({ ...SETTINGS, ...(b as object) }),
     "POST /api/project/analysis": { job_id: "j1" },
+    "POST /api/project/issues/2/shorten": { regions: [] },
   });
   render(<IssuesPanel checks={["flubs", "silences"]} canRun revision={0} onError={() => undefined} />);
   return fetch;
@@ -201,5 +202,18 @@ describe("IssuesPanel", () => {
     expect(await screen.findByText(/Saved/)).toBeInTheDocument();
     const put = fetch.mock.calls.find(([, init]) => init?.method === "PUT");
     expect(JSON.parse(String(put?.[1]?.body))).toMatchObject({ silence_paragraph_s: 4 });
+  });
+
+  test("s shortens a long pause", async () => {
+    const fetch = setup();
+    const table = await screen.findByRole("table");
+    focus(within(table).getAllByRole("row")[1]); // the pause
+    fireEvent.keyDown(table, { key: "s" });
+    expect(await screen.findByText("Shortened to 1.2 s. Re-run checks to update.")).toBeInTheDocument();
+    expect(fetch.mock.calls.some(([u]) => String(u) === "/api/project/issues/2/shorten")).toBe(true);
+    // Not for other kinds.
+    focus(within(table).getAllByRole("row")[2]);
+    fireEvent.keyDown(table, { key: "s" });
+    expect(fetch.mock.calls.filter(([u]) => String(u).includes("/shorten"))).toHaveLength(1);
   });
 });
