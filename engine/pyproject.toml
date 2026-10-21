@@ -15,6 +15,7 @@ dependencies = [
     "soundfile>=0.12",
     "pypdf>=6",  # PDF manuscripts (BSD-3-Clause, pure Python)
     "rapidfuzz>=3",  # fuzzy matching for alignment fallback (MIT)
+    "reportlab>=4",  # the narrator guide's PDF (BSD)
 ]
 
 [project.optional-dependencies]
@@ -28,7 +29,6 @@ dev = [
     "httpx2",  # Starlette's TestClient transport (replaces httpx)
     "ruff>=0.5",
     "mypy>=1.10",
-    "reportlab>=4",  # generates PDF test fixtures only
 ]
 
 [tool.setuptools.packages.find]

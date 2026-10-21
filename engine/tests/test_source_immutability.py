@@ -175,14 +175,15 @@ def test_m3_m4_analysis_leaves_sources_untouched(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Transcribe, Compare to Text, cleanup, takes, the issue checks, decisions,
-    edits, the timeline tools, undo/redo, excerpts and renders only read the
-    sources (one referenced in place)."""
+    edits, the timeline tools, undo/redo, excerpts, renders, finalize, exports
+    and the guide only read the sources (one referenced in place)."""
     from fakeasr import FakeTranscriber
 
     monkeypatch.setenv("HILLAUDIO_HOME", str(tmp_path / "home"))
     names = ["ch01_take1.wav", "ch01_take2.wav", "ch02_take1.wav"]
     originals = [FIXTURES / n for n in names] + [FIXTURES / "manuscript.txt"]
     before = {p: fingerprint(p) for p in originals}
+    listing = sorted(p.name for p in FIXTURES.iterdir())  # nothing written beside them
     app = create_app(hosts=DEFAULT_HOSTS | {"testserver"}, transcriber_factory=FakeTranscriber)
     with TestClient(app) as c:
         loc = tmp_path / "projects"
@@ -258,4 +259,17 @@ def test_m3_m4_analysis_leaves_sources_untouched(
         r = c.get("/api/project/edl/render", params={"start": 0, "end": 30})
         assert r.status_code == 200
         c.get("/api/project/timeline/lanes", params={"start": 0, "end": 60})
+        # M8: finalize preview, WAV and MP3 exports (one source is referenced in
+        # place, so its directory must not gain files), and the guide.
+        assert (
+            c.get("/api/project/finalize/preview", params={"start": 1, "end": 4}).status_code == 200
+        )
+        for fmt in ("wav16", "mp3"):
+            r = c.post("/api/project/export", json={"format": fmt, "split": "chapters"})
+            assert r.status_code == 200, r.text
+            j = c.app.state.engine.jobs.wait(r.json()["job_id"], 120)  # type: ignore[attr-defined]
+            assert j.status == "done", j.error
+        for fmt in ("csv", "md", "pdf"):
+            assert c.get("/api/project/guide", params={"format": fmt}).status_code == 200
     assert {p: fingerprint(p) for p in originals} == before
+    assert sorted(p.name for p in FIXTURES.iterdir()) == listing

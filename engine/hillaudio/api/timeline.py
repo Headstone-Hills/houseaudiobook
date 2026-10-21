@@ -19,7 +19,6 @@ from hillaudio.api.edl import editable_project
 from hillaudio.api.state import EngineState, engine
 from hillaudio.edl import store, timeline_store
 from hillaudio.edl.model import NARRATION, Clip, duration
-from hillaudio.edl.timeline_store import State as TState
 from hillaudio.edl.timeline_store import TimelineError
 from hillaudio.store.project import Project
 
@@ -103,44 +102,10 @@ class MarkerAttrs(BaseModel):
 # -- the view -------------------------------------------------------------------------------
 
 
-class _Locator:
-    """Recording position -> timeline position, by binary search over each
-    recording's narration clips (a 10 h book has thousands of clips and cuts)."""
-
-    def __init__(self, st: TState) -> None:
-        self.st = st
-        self.by_src: dict[int, list[Clip]] = {}
-        for c in st.clips:
-            if c.track_id == NARRATION:
-                self.by_src.setdefault(c.source_id, []).append(c)
-        for cs in self.by_src.values():
-            cs.sort(key=lambda c: c.source_in)
-        self.ins = {s: [c.source_in for c in cs] for s, cs in self.by_src.items()}
-
-    def at_sample(self, source_id: int, x: int) -> float | None:
-        cs = self.by_src.get(source_id)
-        if not cs:
-            return None
-        i = bisect.bisect_right(self.ins[source_id], x) - 1
-        # Moved pieces can overlap in source order only if the same audio plays
-        # twice, which the model never does: one candidate is enough.
-        if i < 0 or not cs[i].source_in <= x < cs[i].source_out:
-            return None
-        c = cs[i]
-        sr = self.st.sources[source_id].sample_rate
-        return (
-            c.timeline_start + float(Fraction(x - c.source_in, sr) * self.st.rate)
-        ) / self.st.rate
-
-    def at(self, source_id: int, seconds: float) -> float | None:
-        src = self.st.sources.get(source_id)
-        return None if src is None else self.at_sample(source_id, round(seconds * src.sample_rate))
-
-
 def view(p: Project) -> dict[str, Any]:
     st = timeline_store.load(p)
     r = st.rate
-    loc = _Locator(st)
+    loc = timeline_store.Locator(st)
 
     def clip(c: Clip) -> dict[str, Any]:
         sr = st.sources[c.source_id].sample_rate

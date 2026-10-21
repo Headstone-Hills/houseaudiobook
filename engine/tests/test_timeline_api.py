@@ -304,8 +304,8 @@ def test_locator_matches_the_simple_mapping_on_a_big_book() -> None:
     import time
     from types import SimpleNamespace
 
-    from hillaudio.api.timeline import _Locator
     from hillaudio.edl.model import Region, SourceInfo, default_segments, layout, place, to_timeline
+    from hillaudio.edl.timeline_store import Locator as _Locator
 
     rng = random.Random(3)
     srcs = [SourceInfo(i, 48000, 48000 * 720) for i in range(1, 51)]  # 10 h
