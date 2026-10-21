@@ -137,7 +137,7 @@ def test_mp3_from_mp3_sources_is_refused(client: TestClient, tmp_path: Path) -> 
 def test_settings_and_presets(client: TestClient) -> None:
     v = client.get("/api/project/finalize").json()
     assert v["settings"]["preset"] == "acx" and v["presets"]["acx"]["rms_min_db"] == -23.0
-    assert "Verify on acx.com" in v["presets"]["acx"]["note"]
+    assert "RMS -23 to -18 dB, peak -3 dB, noise floor -60 dB RMS" in v["presets"]["acx"]["note"]
     r = client.put("/api/project/finalize", json={"nr_strength": 0.8, "gate": True})
     assert r.status_code == 200 and r.json()["settings"]["nr_strength"] == 0.8
     assert client.put("/api/project/finalize", json={"nr_strength": 3}).status_code == 400

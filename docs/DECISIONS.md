@@ -631,8 +631,8 @@ global alignment:
   that page's summary in web search results on 2026-10-21, cross-checked with
   secondary guides. Secondary guides disagree on the head room tone (0.5–1 s
   vs 1–5 s), so the preset uses the summary's 1–5 s. The 120-minute limit
-  appears only in secondary guides. The preset says "verify on acx.com", and
-  custom presets can override everything.
+  appears only in secondary guides. Custom presets can override everything.
+  The user confirmed the RMS, peak and noise-floor numbers on 2026-10-21 (D-058).
 - Chain defaults: target RMS −20 dB (mid-range), ceiling −3.5 dB (0.5 dB under
   the peak limit, as margin for MP3 encoding).
 
@@ -774,3 +774,28 @@ global alignment:
 - **Targets.** Minimum macOS 12 is the oldest still common, and Tauri 2 supports
   it. The CI runner is Apple Silicon. Intel is the same script on an Intel
   machine; it is untested (open question 5).
+
+## D-058 · The user's answers to open questions 5, 9, 10 and 11 (2026-10-21)
+- **5: Apple Silicon only.** No Intel build. The minimum stays macOS 12
+  (D-057). This also leaves the Apple Silicon-only mlx backend (D-007) open for
+  later.
+- **9: lossy recordings export as WAV.**
+  - The Export panel defaults to WAV 24-bit when any recording on the timeline
+    is lossy, and says why.
+  - If the user picks MP3 anyway, pre-flight and the API still refuse it:
+    lossy to lossy is never done (CLAUDE.md).
+  - Whether the WAV is then encoded to MP3 elsewhere is the user's call,
+    outside the app.
+- **10: ACX numbers confirmed.**
+  - The user gave: average RMS -23 to -18 dB, peaks at or below -3 dB
+    (or -3 dBTP), noise floor at most -60 dB RMS. These are exactly the
+    preset's, so only its "verify on acx.com" caveat was removed.
+  - Peaks are checked as sample peaks of the file as written, decoded back,
+    which is the "-3 dB" reading. The limiter's -3.5 dB ceiling leaves margin.
+  - A true-peak (dBTP) check would be stricter. It isn't added, since the user
+    gave both readings as acceptable.
+- **11: publish the ffmpeg source with each release.**
+  - `scripts/build_ffmpeg.sh` keeps the exact verified inputs in `source/`: the
+    FFmpeg tarball and signature, the LAME tarball, and the script.
+  - CI uploads them as the `ffmpeg-source` artifact, next to the `.dmg`. They
+    are not bundled in the app.

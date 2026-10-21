@@ -292,7 +292,7 @@ Acceptance criteria (SPEC §9):
   - a look-ahead limiter that never exceeds its ceiling.
   - The chain is project settings, applied at render time (nothing baked in), with an A/B preview of any stretch.
 - [x] **Loudness presets with a pass/fail report.**
-  - The ACX/Audible preset is dated 2026-10, marked "verify on acx.com", and holds RMS -23…-18 dB, peak ≤ -3 dB, noise floor ≤ -60 dB RMS, 192 kbps+ CBR MP3 at 44.1 kHz, 1–5 s room tone at each end, and ≤ 120 min per file. Custom presets can be added.
+  - The ACX/Audible preset is dated 2026-10, confirmed by the user (open question 10), and holds RMS -23…-18 dB, peak ≤ -3 dB, noise floor ≤ -60 dB RMS, 192 kbps+ CBR MP3 at 44.1 kHz, 1–5 s room tone at each end, and ≤ 120 min per file. Custom presets can be added.
   - The report covers peak, RMS, noise floor, digital silence, length, bitrate and sample rate per file, measured on the file *as written* (decoded back, D-052).
 - [x] **WAV/MP3 export.**
   - WAV 16-bit (TPDF dither) or 24-bit; MP3 CBR via LAME, encoded once from the lossless render.
@@ -350,10 +350,18 @@ Bugs found and fixed, with regression tests:
 
 Deferred and risks:
 - **The `.app` runs only in CI.** It can't be launched in this container. The CI smoke tests are the proof, and a manual check on a real Mac (opening the window, Gatekeeper with a real Developer ID) is still worth doing.
-- **Bundled ffmpeg.** Our own LGPL build, from verified sources. The first CI run had depended on a third-party binary host, which was down (HTTP 521). Releasing it needs a source offer (open question 11).
-- **Intel Macs** are unbuilt (open question 5).
+- **Bundled ffmpeg.** Our own LGPL build, from verified sources. The first CI run had depended on a third-party binary host, which was down (HTTP 521). Its source is published with each release (open question 11, answered).
+- **Intel Macs** aren't supported (open question 5, answered: Apple Silicon only).
 - **Engine size.** The engine is about 0.6 GB (ctranslate2, onnxruntime, PyAV). The `.dmg` compresses it; trimming unused libraries is possible later.
 - **FFmpeg on macOS.** ffmpeg.org is blocked from this container. The build script was tested here end to end with Ubuntu's copy of the signed 6.1.1 release tarball (signature check, LGPL configuration, the engine tests, a tampered tarball rejected); CI builds 8.0 on macOS.
+
+## After M9 · answers to the open questions (2026-10-21)
+- Questions 5, 9, 10 and 11 answered (D-058):
+  - Apple Silicon only.
+  - Lossy recordings default the export to WAV (tested).
+  - The ACX numbers are confirmed, and the preset's caveat is gone.
+  - The ffmpeg source is kept by every build and uploaded by CI as `ffmpeg-source`, for each release.
+- **Bug found and fixed**, with a regression test: Alt+Up/Down right after "add track" could be ignored. It read the tracks from the last render, which didn't have the new one yet. The move is now built from the queued view, like the other edits. Found as an intermittent m7 e2e failure.
 
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.
@@ -361,10 +369,10 @@ Defaults are assumed until answered; none blocks M1.
 2. Primary export target ACX/Audible or general? *Assumed: ACX preset as default, custom presets allowed.*
 3. Most common manuscript formats? *Assumed: SPEC §9 order (.txt, .docx, .pdf).*
 4. Guide timestamps reference original recordings, edited master, or both? *Assumed: selectable, default original recording.*
-5. Minimum macOS version; Apple Silicon only or Intel too? *Affects D-007 (mlx) and M9.*
+5. ~~Minimum macOS version; Apple Silicon only or Intel too?~~ *Answered 2026-10-21: Apple Silicon only, no Intel build (D-058). The minimum stays macOS 12.*
 6. MIDI / music-bed track ever needed? *Assumed: no (SPEC §2 non-goal).*
 7. ~~pedalboard is GPL-3.0.~~ *Resolved in M8 without needing a decision: the DSP is our own numpy code (D-050).*
-9. **MP3 recordings and ACX.** MP3 export from MP3 recordings is refused (lossy to lossy, CLAUDE.md), but ACX wants MP3. *Assumed: narrators deliver WAV; for MP3 originals, export WAV and encode elsewhere, or allow one re-encode as an explicit opt-in?*
-10. **Confirm the ACX numbers on acx.com.** The page was unreachable from this environment; the preset uses its summary in search results (D-051).
-11. **Distribution of the bundled ffmpeg.** The Mac app ships our own LGPL build of ffmpeg/ffprobe, with libmp3lame. For a public release, the LGPL needs the corresponding source on offer. *Assumed: host the two source tarballs and the build script alongside the release. Is that acceptable, or should MP3 export rely on a user-installed ffmpeg instead?*
+9. ~~MP3 recordings and ACX.~~ *Answered 2026-10-21: export as WAV. A book with lossy recordings now defaults to WAV export, with the reason shown; MP3 stays refused (D-058).*
+10. ~~Confirm the ACX numbers.~~ *Answered 2026-10-21: RMS -23 to -18 dB, peaks at or below -3 dB (or -3 dBTP), noise floor at most -60 dB RMS. These match the preset; its "verify" caveat is gone (D-058).*
+11. ~~Distribution of the bundled ffmpeg.~~ *Answered 2026-10-21: yes, publish the source tarballs and the build script with each release. The build keeps them, and CI uploads them as the `ffmpeg-source` artifact (D-058).*
 8. **Commercial use?** If the app will ever be sold or used commercially, CrisperWhisper's weights are off the table, which D-007 already assumes.

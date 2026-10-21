@@ -86,12 +86,12 @@ With an identity set, Tauri signs the app with the hardened runtime and `shell/s
 
 ## Platform notes
 - Minimum macOS 12 (Monterey), set in `tauri.conf.json`.
-- The CI build is Apple Silicon only. An Intel build is the same script on an Intel Mac (or `macos-13`); a universal build would need universal Python wheels. See open question 5 in PROGRESS.
+- Apple Silicon only (D-058): Intel Macs aren't supported or built.
 - The app home is `~/Library/Application Support/HillAudiobook`. It holds settings, recent projects and models (`models/`). An existing `~/.hillaudiobook` keeps being used. `$HILLAUDIO_HOME` overrides both.
 - Size: the engine is ~0.5–0.6 GB (ctranslate2, onnxruntime, PyAV, numpy). The default small.en model (486 MB) is downloaded on first run.
 
 ## Licensing before distributing
 See `docs/LICENSES.md`.
 - The bundled ffmpeg is our own LGPL build: separate programs, with the license texts and build configuration beside them in `bin/`.
-- For a public release, LGPL compliance also needs the corresponding source on offer: the FFmpeg and LAME tarballs plus `scripts/build_ffmpeg.sh`.
+- **Every public release publishes the corresponding source next to the `.dmg`** (D-058). It is the `source/` folder of the ffmpeg build: the verified FFmpeg tarball and signature, the LAME tarball, and `scripts/build_ffmpeg.sh`. CI uploads it as the `ffmpeg-source` artifact; attach both artifacts to the release.
 - A full third-party notices file is part of release preparation.

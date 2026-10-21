@@ -33,7 +33,7 @@ test("finalize, export and the corrections guide", async ({ page }) => {
 
   // Finalize: analyze against ACX.
   const fin = page.locator("section.finalize");
-  await expect(fin.getByText(/Verify on acx.com/)).toBeVisible();
+  await expect(fin.getByText(/RMS -23 to -18 dB, peak -3 dB, noise floor -60 dB RMS/)).toBeVisible();
   await fin.getByRole("button", { name: "Analyze levels" }).click();
   await expect(fin.getByRole("table", { name: /Levels after finalize: passes/ })).toBeVisible({ timeout: 60_000 });
 

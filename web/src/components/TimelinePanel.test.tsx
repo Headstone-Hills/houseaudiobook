@@ -163,4 +163,26 @@ describe("TimelinePanel", () => {
     press(app, "+");
     await waitFor(() => expect(sent(fetch).map(([, b]) => (b as { gain_db: number }).gain_db)).toEqual([1, 2, 3]));
   });
+
+  test("Alt+Down right after adding a track moves the clip there (regression)", async () => {
+    const one = { ...VIEW, tracks: VIEW.tracks.slice(0, 1) };
+    let added: () => void = () => undefined;
+    const fetch = mockApi({
+      "GET /api/project/timeline": one,
+      "GET /api/project/timeline/lanes": LANES,
+      "GET /api/project/sources/1/peaks": { min: [], max: [], total_buckets: 0 },
+      "GET /api/project/sources/2/peaks": { min: [], max: [], total_buckets: 0 },
+      // The new track arrives only after Alt+Down has been pressed.
+      "POST /api/project/timeline/tracks": () => new Promise((r) => (added = () => r(VIEW))),
+      "POST /api/project/timeline/move": VIEW,
+    });
+    render(<TimelinePanel sources={[source({ id: 1 })]} peakSettings={SETTINGS.peaks} revision={0} onEdited={() => undefined} onError={() => undefined} />);
+    const app = await screen.findByRole("application", { name: /Timeline/ });
+    act(() => app.focus());
+    press(app, "t");
+    press(app, "ArrowDown", { altKey: true });
+    await waitFor(() => expect(sent(fetch).map(([u]) => u)).toEqual(["timeline/tracks"]));
+    act(() => added());
+    await waitFor(() => expect(sent(fetch)).toContainEqual(["timeline/move", { ref: VIEW.clips[0]!.ref, t: 0, track_id: 2 }]));
+  });
 });

@@ -137,6 +137,26 @@ describe("ExportPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("lossy to lossy is never done");
     expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
   });
+
+  test("lossy recordings default the export to WAV", async () => {
+    const lossyPf = { ...PF, lossy_sources: ["pickup"] };
+    const fetch = mockApi({
+      "GET /api/project/export/preflight": (_b: unknown, url: string) =>
+        url.includes("format=mp3") ? { ...lossyPf, problems: ["MP3 export would re-encode lossy recordings (pickup)"] } : lossyPf,
+      "GET /api/project/exports": [],
+      "POST /api/project/export": { job_id: "e1" },
+    });
+    render(<ExportPanel jobs={[]} onError={() => undefined} />);
+    expect(await screen.findByText(/Some recordings are lossy \(pickup\), so this exports as WAV/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Format")).toHaveValue("wav24");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Export" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    await waitFor(() => expect(calls(fetch, "POST")).toContainEqual(["/api/project/export", { format: "wav24", split: "single", kbps: null }]));
+    // Choosing MP3 on purpose is respected, and still refused.
+    fireEvent.change(screen.getByLabelText("Format"), { target: { value: "mp3" } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("re-encode lossy recordings");
+    expect(screen.getByLabelText("Format")).toHaveValue("mp3");
+  });
 });
 
 describe("GuidePanel", () => {

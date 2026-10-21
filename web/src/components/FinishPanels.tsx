@@ -235,13 +235,17 @@ export function FinalizePanel({ jobs, onError }: Common) {
 
 /** Export (SPEC §6.9): pre-flight first, then the files, with a report on each. */
 export function ExportPanel({ jobs, onError }: Common) {
-  const [format, setFormat] = useState<ExportFormat>("mp3");
+  const [chosen, setChosen] = useState<ExportFormat | null>(null);
   const [split, setSplit] = useState<SplitMode>("single");
   const [kbps, setKbps] = useState(192);
   const [pf, setPf] = useState<Preflight | null>(null);
   const [past, setPast] = useState<ExportReport[]>([]);
   const [jobId, setJobId] = useState<string | null>(null);
   const job = useJob(jobId, jobs);
+  // Until the user picks a format, a book with lossy recordings defaults to WAV:
+  // MP3 would re-encode them, which is never done (D-058).
+  const lossy = pf?.lossy_sources ?? [];
+  const format: ExportFormat = chosen ?? (lossy.length > 0 ? "wav24" : "mp3");
 
   useEffect(() => {
     api
@@ -265,7 +269,10 @@ export function ExportPanel({ jobs, onError }: Common) {
       <div className="run-row">
         <label>
           Format
-          <select value={format} onChange={(e) => setFormat(e.target.value as ExportFormat)}>
+          <select
+            value={format}
+            onChange={(e) => setChosen(e.target.value as ExportFormat)}
+          >
             <option value="mp3">MP3 (CBR)</option>
             <option value="wav24">WAV 24-bit</option>
             <option value="wav16">WAV 16-bit</option>
@@ -298,6 +305,12 @@ export function ExportPanel({ jobs, onError }: Common) {
         <div className="preflight" aria-label="Pre-flight summary">
           <h3>Before you export</h3>
           <ul>
+            {lossy.length > 0 && format !== "mp3" && (
+              <li>
+                Some recordings are lossy ({lossy.join(", ")}), so this exports as WAV: MP3 would re-encode them,
+                and lossy to lossy is never done. Encode the WAV to MP3 elsewhere if your distributor needs MP3.
+              </li>
+            )}
             <li>
               {issues.length
                 ? `Unresolved issues: ${issues.map(([k, n]) => `${n} ${k.replace("_", " ")}`).join(", ")}`

@@ -77,9 +77,10 @@ class Preset:
         return self
 
 
-# Numbers from ACX's "Audio Submission Requirements" page as summarized in search
-# results on 2026-10-21; the page itself couldn't be fetched from this
-# environment. Verify on acx.com before relying on them (SPEC §6.8 note).
+# ACX's requirements, confirmed by the user on 2026-10-21 (open question 10):
+# average RMS -23 to -18 dB, peaks at or below -3 dB, noise floor at most -60 dB
+# RMS. Peaks are sample peaks of the file as written (decoded back), the "-3 dB"
+# reading; -3 dBTP would be the stricter one (D-051).
 ACX = Preset(
     "acx",
     "ACX / Audible",
@@ -94,7 +95,7 @@ ACX = Preset(
     max_minutes=120.0,
     note="ACX requirements as of 2026-10 (RMS -23 to -18 dB, peak -3 dB, noise floor "
     "-60 dB RMS, 192 kbps+ CBR MP3 at 44.1 kHz, 1-5 s room tone each end, same "
-    "channels in every file). Verify on acx.com: they can change.",
+    "channels in every file). ACX can change these: check them now and then.",
 )
 BUILTIN = {ACX.key: ACX}
 

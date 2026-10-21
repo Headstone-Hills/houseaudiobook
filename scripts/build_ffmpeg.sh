@@ -72,4 +72,11 @@ cp "$PREFIX/bin/ffmpeg" "$PREFIX/bin/ffprobe" "$OUT/"
 cp src/COPYING.LGPLv2.1 "$OUT/LICENSE-ffmpeg.txt"
 cp lame-3.100/COPYING "$OUT/LICENSE-lame.txt"
 "$OUT/ffmpeg" -hide_banner -buildconf >"$OUT/BUILDCONF-ffmpeg.txt"
+
+# 5. The corresponding source, published with each release (the LGPL's source
+#    offer, open question 11): the verified tarballs, the signature and this script.
+#    Not bundled in the app (the engine spec takes only the programs and *.txt).
+mkdir -p "$OUT/source"
+cp "$TARBALL" "$SIG" "$WORK/lame.tar.gz" "$ROOT/scripts/build_ffmpeg.sh" "$OUT/source/"
+mv "$OUT/source/lame.tar.gz" "$OUT/source/lame-3.100.tar.gz"
 echo "$("$OUT/ffmpeg" -hide_banner -version | head -1) (LGPL, libmp3lame) -> $OUT"

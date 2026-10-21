@@ -32,7 +32,7 @@ shipped in the app.
 | @types/node | current | MIT | dev only |
 | pytest, ruff, mypy, httpx2 | current | MIT / MIT / MIT / BSD-3 | dev only |
 | espeak-ng | 1.51 | GPL-3.0-or-later | dev only (fixture generation); never bundled |
-| ffmpeg, ffprobe | 6.1 (system, dev) / static build (Mac app) | LGPL-2.1+ or GPL-2.0+, depending on build | **bundled in the Mac app** as separate executables (D-056). It is our own static build (`scripts/build_ffmpeg.sh`): FFmpeg 8.0 configured **LGPL-2.1+ only** (the build fails otherwise), plus LAME 3.100 (LGPL-2.0+), with the license texts shipped beside them. For a public release, offer the corresponding source (the two tarballs plus the script) |
+| ffmpeg, ffprobe | 6.1 (system, dev) / static build (Mac app) | LGPL-2.1+ or GPL-2.0+, depending on build | **bundled in the Mac app** as separate executables (D-056). It is our own static build (`scripts/build_ffmpeg.sh`): FFmpeg 8.0 configured **LGPL-2.1+ only** (the build fails otherwise), plus LAME 3.100 (LGPL-2.0+), with the license texts shipped beside them. The corresponding source (both tarballs, the signature and the script) is kept by every build and published with each release (D-058) |
 | pyinstaller | 6.22.3 | GPL-2.0-or-later with the bootloader exception | build tool; its bootloader is shipped, which the exception permits for non-GPL apps |
 | tauri, tauri-build | 2.12.5 (wry 0.57, tao 0.37) | MIT or Apache-2.0 | yes (the Mac app's window) |
 | Rust crates under tauri | various | almost all MIT/Apache-2.0 | yes; a full crate-by-crate list (`cargo about` or similar) is left for release preparation |

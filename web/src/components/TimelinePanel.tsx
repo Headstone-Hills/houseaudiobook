@@ -222,6 +222,14 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
         return c ? api.tl("trim", { ref: ref(c), edge, t: playhead }) : null;
       }, `Trimmed ${edge}`),
     roll: (dir: number) => edit(() => api.tl("roll", { t: playhead, delta: dir * NUDGE_S }), "Rolling edit"),
+    // To the track above or below, worked out from the queued view: right after
+    // "add track" the new track may not have rendered yet (regression).
+    moveTrack: (dir: number) =>
+      edit((v) => {
+        const c = clipIn(v);
+        const to = c && v.tracks[v.tracks.findIndex((t) => t.id === c.track_id) + dir];
+        return c && to ? api.tl("move", { ref: ref(c), t: c.timeline_start, track_id: to.id }) : null;
+      }, "Moved clip"),
     moveTo: (c: TimelineClip, t: number, track: number) =>
       edit(() => api.tl("move", { ref: ref(c), t: Math.max(0, t), track_id: track }), "Moved clip"),
     gain: (delta: number) =>
@@ -280,13 +288,7 @@ export function TimelinePanel({ sources, peakSettings, revision, onEdited, onErr
         const t = nextSnap(points, c.timeline_start, k === "ArrowLeft" ? -1 : 1);
         return tools.moveTo(c, t, c.track_id), true;
       }
-      if (e.altKey && (k === "ArrowUp" || k === "ArrowDown")) {
-        const c = clipUnderPlayhead();
-        const i = tracks.findIndex((t) => t.id === (c?.track_id ?? trackId));
-        const to = tracks[i + (k === "ArrowUp" ? -1 : 1)];
-        if (c && to) tools.moveTo(c, c.timeline_start, to.id);
-        return true;
-      }
+      if (e.altKey && (k === "ArrowUp" || k === "ArrowDown")) return tools.moveTrack(k === "ArrowUp" ? -1 : 1), true;
       if (e.altKey && (k === "ArrowLeft" || k === "ArrowRight")) return seek(nextSnap(points, playhead, k === "ArrowLeft" ? -1 : 1)), true;
       switch (k) {
         case "ArrowLeft":

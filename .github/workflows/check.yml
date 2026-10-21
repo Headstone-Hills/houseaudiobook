@@ -75,3 +75,10 @@ jobs:
             shell/target/release/bundle/dmg/*.dmg
           if-no-files-found: error
           retention-days: 14
+      # The LGPL source offer for the bundled ffmpeg: publish it with each release.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-source
+          path: build/ffmpeg-arm64/source/
+          if-no-files-found: error
+          retention-days: 14
