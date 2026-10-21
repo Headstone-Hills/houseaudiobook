@@ -1,8 +1,8 @@
 """faster-whisper backend (D-028).
 
-The only network use in the app: the first time a model is used, its weights
-download from Hugging Face into `$HILLAUDIO_HOME/models`. Audio never leaves
-the machine: transcription runs locally on the CPU.
+Models are downloaded explicitly, verified, into `$HILLAUDIO_HOME/models`
+(asr/models.py, D-055): the only network use in the app. Audio never leaves the
+machine: transcription runs locally on the CPU.
 """
 
 from __future__ import annotations
@@ -45,18 +45,21 @@ def _model(s: AsrSettings) -> Any:
                 raise AsrUnavailable(
                     "speech recognition isn't installed (pip install 'hillaudio[asr]')"
                 ) from None
-            try:
-                _models[key] = WhisperModel(
-                    s.model,
-                    device="cpu",
-                    compute_type=s.compute_type,
-                    download_root=str(models_dir()),
-                )
-            except Exception as e:  # network or disk problems while downloading
+            from hillaudio.asr import models
+
+            spec = models.CATALOG.get(s.model)
+            local = models.local_dir(spec) if spec else None
+            if local is None:
+                size = f" (about {spec.size_mb} MB)" if spec else ""
                 raise AsrUnavailable(
-                    f"couldn't load the {s.model} speech model ({e}). The first use downloads "
-                    "it from huggingface.co (and *.hf.co); check the network allows them"
-                ) from None
+                    f"the {s.model} speech model isn't downloaded yet{size}. Download it under "
+                    "Speech models; it's fetched once from huggingface.co, and audio never "
+                    "leaves this computer"
+                )
+            try:
+                _models[key] = WhisperModel(str(local), device="cpu", compute_type=s.compute_type)
+            except Exception as e:  # a damaged copy, or not enough memory
+                raise AsrUnavailable(f"couldn't load the {s.model} speech model ({e})") from None
         return _models[key]
 
 

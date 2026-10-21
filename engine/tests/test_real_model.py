@@ -143,3 +143,23 @@ def test_small_en_finds_exactly_the_injected_errors(client: TestClient, tmp_path
     assert rep["pass"], [
         (f["title"], c) for f in rep["files"] for c in f["checks"] if not c["pass"]
     ]
+
+
+def test_first_run_download_from_hugging_face(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M9: the pinned catalog matches the real files; a fresh download verifies,
+    installs, and transcribes (tiny.en, 75 MB)."""
+    from hillaudio.asr import models
+    from hillaudio.asr.base import AsrSettings
+    from hillaudio.asr.whisper import WhisperTranscriber
+
+    monkeypatch.setenv("HILLAUDIO_MODELS", str(tmp_path / "models"))
+    monkeypatch.delenv("HILLAUDIO_MODEL_ENDPOINT", raising=False)
+    seen: list[float] = []
+    path = models.download("tiny.en", lambda f, _m: seen.append(f))
+    assert (path / models.MARKER).is_file() and seen[-1] == 1.0
+    words = WhisperTranscriber(AsrSettings(model="tiny.en")).transcribe(
+        FIXTURES / "ch01_take2.wav", 3.9, lambda *_: None, lambda: None
+    )
+    assert "vain" in " ".join(w.text for w in words).lower()

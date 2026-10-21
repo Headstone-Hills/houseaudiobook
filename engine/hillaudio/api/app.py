@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from hillaudio import __version__, functions, settings
 from hillaudio.analysis.peaks import BASE, FACTOR, LEVELS, Peaks
-from hillaudio.api import analysis, edl, finalize, issues, manuscript, takes, timeline
+from hillaudio.api import analysis, edl, finalize, issues, manuscript, models, takes, timeline
 from hillaudio.api.guard import DEFAULT_HOSTS, LocalOnlyGuard, allowed_origins
 from hillaudio.api.jobs import JobContext
 from hillaudio.api.state import EngineState, TranscriberFactory
@@ -332,6 +332,7 @@ def create_app(
     app.include_router(takes.router)
     app.include_router(timeline.router)
     app.include_router(finalize.router)
+    app.include_router(models.router)
     if web_dir is not None:
         if not (web_dir / "index.html").is_file():
             raise RuntimeError(f"no built UI in {web_dir} (run: cd web && npm run build)")

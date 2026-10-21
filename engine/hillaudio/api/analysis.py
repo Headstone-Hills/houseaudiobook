@@ -25,9 +25,16 @@ class AnalysisRequest(BaseModel):
 
 @router.get("/api/asr")
 def asr_info() -> dict[str, Any]:
+    from hillaudio.asr import models
+
+    have = {m.name: models.local_dir(m) is not None for m in models.CATALOG.values()}
     return {
         "installed": whisper.installed(),
-        "models": [{"name": m, "size_mb": mb} for m, mb in MODEL_SIZES_MB.items()],
+        "models": [
+            {"name": m, "size_mb": mb, "downloaded": have.get(m, False)}
+            for m, mb in MODEL_SIZES_MB.items()
+            if m in have  # only models we can verify (D-055)
+        ],
         "default": AsrSettings().to_json(),
     }
 
