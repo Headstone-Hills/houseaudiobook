@@ -39,8 +39,12 @@ scripts/build_macos.sh
 
 It does six things:
 1. **Gets ffmpeg and ffprobe.**
-   - Uses `FFMPEG_DIR` if set (a folder with both tools); otherwise downloads static builds for this CPU into `build/ffmpeg-<arch>/` from ffmpeg.martin-riedl.de.
-   - It requires libmp3lame (MP3 export).
+   - Uses `FFMPEG_DIR` if set (a folder with both tools). Otherwise `scripts/build_ffmpeg.sh` builds them into `build/ffmpeg-<arch>/` (about 3 min; CI caches it). That build is:
+     - static, **LGPL-only** (no `--enable-gpl`, no nonfree, `--disable-autodetect`), with libmp3lame and nothing else external;
+     - made from LAME 3.100, checked against a pinned SHA-256;
+     - made from the FFmpeg release tarball, checked against its signature from the pinned FFmpeg release key `FCF986EA15E6E293A5644F10B4322F04D67658D8`;
+     - shipped with its license texts and `-buildconf`.
+   - Either way, libmp3lame is required (MP3 export).
 2. **Builds the engine** with `scripts/build_engine.sh`: the web build, then PyInstaller onedir into `build/engine/hillaudio-engine/`.
 3. **Signs every Mach-O file** in the engine folder. It uses the identity if one is given, otherwise ad-hoc.
 4. **Runs `cargo tauri build --bundles app,dmg`** in `shell/`.
@@ -86,7 +90,8 @@ With an identity set, Tauri signs the app with the hardened runtime and `shell/s
 - The app home is `~/Library/Application Support/HillAudiobook`. It holds settings, recent projects and models (`models/`). An existing `~/.hillaudiobook` keeps being used. `$HILLAUDIO_HOME` overrides both.
 - Size: the engine is ~0.5–0.6 GB (ctranslate2, onnxruntime, PyAV, numpy). The default small.en model (486 MB) is downloaded on first run.
 
-## Licensing to settle before distributing
-See `docs/LICENSES.md`. The open item is the bundled ffmpeg build.
-- Static builds with x264/x265 are GPL. Shipping one as a separate program is allowed, but the GPL's source-offer duties apply.
-- An LGPL build with only libmp3lame (LAME is LGPL) avoids that.
+## Licensing before distributing
+See `docs/LICENSES.md`.
+- The bundled ffmpeg is our own LGPL build: separate programs, with the license texts and build configuration beside them in `bin/`.
+- For a public release, LGPL compliance also needs the corresponding source on offer: the FFmpeg and LAME tarballs plus `scripts/build_ffmpeg.sh`.
+- A full third-party notices file is part of release preparation.

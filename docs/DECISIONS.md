@@ -742,9 +742,19 @@ global alignment:
   The packaged app therefore never depends on what the user installed. Every
   call site goes through `hillaudio.tools`, and `/api/health` reports the path in
   use so the smoke test can require the bundled one.
-- **Which ffmpeg builds.** The Mac build bundles static ffmpeg builds that
-  include libmp3lame, required by MP3 export (D-052). The license choice is open
-  (LICENSES.md).
+- **Which ffmpeg.** Our own static build (`scripts/build_ffmpeg.sh`), not a
+  third-party binary:
+  - The first CI run failed because the third-party build host was down
+    (HTTP 521). A single external binary host is a fragile and unverifiable
+    dependency.
+  - Ours is configured LGPL-only, with libmp3lame (MP3 export, D-052) and
+    nothing autodetected. The build fails unless configure reports an LGPL
+    license.
+  - Its sources are verified: LAME by a pinned SHA-256, FFmpeg by its release
+    signature from the pinned key fingerprint.
+  - It passes the whole engine test suite (305 tests run with only it on the
+    tool path).
+  - The app needs nothing GPL, so the GPL question doesn't arise.
 - **App home.** `~/Library/Application Support/HillAudiobook` on macOS, the
   platform's convention. An existing `~/.hillaudiobook` keeps being used so
   nothing is lost. `$HILLAUDIO_HOME` overrides both. Projects themselves live

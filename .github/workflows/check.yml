@@ -59,6 +59,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: shell
+      - name: Cache the ffmpeg build
+        uses: actions/cache@v4
+        with:
+          path: build/ffmpeg-arm64
+          key: ffmpeg-macos-arm64-${{ hashFiles('scripts/build_ffmpeg.sh') }}
       - name: Launcher tests
         run: cd shell && cargo test -p hillaudio-launcher
       - name: Build and smoke-test HillAudiobook.app

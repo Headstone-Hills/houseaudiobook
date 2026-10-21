@@ -14,18 +14,12 @@ cd "$ROOT"
 [[ "$(uname)" == "Darwin" ]] || { echo "error: build the .app on macOS"; exit 1; }
 ARCH="$(uname -m)"  # arm64 (Apple Silicon) or x86_64 (Intel)
 
-# 1. ffmpeg + ffprobe to bundle: FFMPEG_DIR, or static builds downloaded here.
+# 1. ffmpeg + ffprobe to bundle: FFMPEG_DIR, or our own LGPL build from verified
+#    sources (scripts/build_ffmpeg.sh; reused while it is there).
 if [[ -z "${FFMPEG_DIR:-}" ]]; then
   FFMPEG_DIR="$ROOT/build/ffmpeg-$ARCH"
   if [[ ! -x "$FFMPEG_DIR/ffmpeg" || ! -x "$FFMPEG_DIR/ffprobe" ]]; then
-    mkdir -p "$FFMPEG_DIR"
-    for tool in ffmpeg ffprobe; do
-      url="https://ffmpeg.martin-riedl.de/redirect/latest/macos/$ARCH/release/$tool.zip"
-      echo "downloading $tool ($url)"
-      curl -fsSL "$url" -o "$FFMPEG_DIR/$tool.zip"
-      (cd "$FFMPEG_DIR" && unzip -oq "$tool.zip" && rm "$tool.zip" && chmod +x "$tool")
-      shasum -a 256 "$FFMPEG_DIR/$tool"
-    done
+    scripts/build_ffmpeg.sh "$FFMPEG_DIR"
   fi
 fi
 "$FFMPEG_DIR/ffmpeg" -hide_banner -encoders 2>/dev/null | grep -q libmp3lame \

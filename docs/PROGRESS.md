@@ -350,10 +350,10 @@ Bugs found and fixed, with regression tests:
 
 Deferred and risks:
 - **The `.app` runs only in CI.** It can't be launched in this container. The CI smoke tests are the proof, and a manual check on a real Mac (opening the window, Gatekeeper with a real Developer ID) is still worth doing.
-- **Bundled ffmpeg license** (open question 11).
+- **Bundled ffmpeg.** Our own LGPL build, from verified sources. The first CI run had depended on a third-party binary host, which was down (HTTP 521). Releasing it needs a source offer (open question 11).
 - **Intel Macs** are unbuilt (open question 5).
 - **Engine size.** The engine is about 0.6 GB (ctranslate2, onnxruntime, PyAV). The `.dmg` compresses it; trimming unused libraries is possible later.
-- **Download URL.** The ffmpeg URL in `build_macos.sh` couldn't be checked from here (the proxy blocks that host). CI confirms it, or `FFMPEG_DIR` can point at your own build.
+- **FFmpeg on macOS.** ffmpeg.org is blocked from this container. The build script was tested here end to end with Ubuntu's copy of the signed 6.1.1 release tarball (signature check, LGPL configuration, the engine tests, a tampered tarball rejected); CI builds 8.0 on macOS.
 
 ## Open questions for the user (SPEC §13 and found in M0)
 Defaults are assumed until answered; none blocks M1.
@@ -366,5 +366,5 @@ Defaults are assumed until answered; none blocks M1.
 7. ~~pedalboard is GPL-3.0.~~ *Resolved in M8 without needing a decision: the DSP is our own numpy code (D-050).*
 9. **MP3 recordings and ACX.** MP3 export from MP3 recordings is refused (lossy to lossy, CLAUDE.md), but ACX wants MP3. *Assumed: narrators deliver WAV; for MP3 originals, export WAV and encode elsewhere, or allow one re-encode as an explicit opt-in?*
 10. **Confirm the ACX numbers on acx.com.** The page was unreachable from this environment; the preset uses its summary in search results (D-051).
-11. **Bundled ffmpeg license.** The Mac app ships ffmpeg/ffprobe as separate programs. Full static builds are GPL: allowed, but with the GPL's source-offer duties. An LGPL build with only libmp3lame avoids them. *Assumed for now: GPL static builds, fine for testing; decide before distributing (LICENSES.md).*
+11. **Distribution of the bundled ffmpeg.** The Mac app ships our own LGPL build of ffmpeg/ffprobe, with libmp3lame. For a public release, the LGPL needs the corresponding source on offer. *Assumed: host the two source tarballs and the build script alongside the release. Is that acceptable, or should MP3 export rely on a user-installed ffmpeg instead?*
 8. **Commercial use?** If the app will ever be sold or used commercially, CrisperWhisper's weights are off the table, which D-007 already assumes.

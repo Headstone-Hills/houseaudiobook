@@ -28,6 +28,10 @@ if ffmpeg_dir:
         if not p.is_file():
             raise SystemExit(f"FFMPEG_DIR has no {tool}: {p}")
         binaries.append((str(p), "bin"))
+    # License texts and build configuration that come with our own build
+    # (scripts/build_ffmpeg.sh): the LGPL asks for them to travel with the program.
+    for extra in sorted(Path(ffmpeg_dir).glob("*.txt")):
+        datas.append((str(extra), "bin"))
 else:
     print("note: FFMPEG_DIR not set: the engine will use ffmpeg from PATH")
 
